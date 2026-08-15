@@ -1,0 +1,20 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+
+  <PropertyGroup>
+    <!-- Dalamud.NET.Sdk sets TargetFramework, references (Dalamud, ImGui,
+         Lumina, Lumina.Excel, FFXIVClientStructs), output path, and the
+         generated plugin manifest for you. -->
+    <Version>0.1.0.0</Version>
+    <Authors>Aaron</Authors>
+    <Company></Company>
+    <Description>Track your Occult Crescent records collection. Auto-opens in The South Horn / The North Horn and shows which Occult Records you have collected.</Description>
+    <DalamudPunchline>See your Occult Records progress the moment you set foot in the Occult Crescent.</DalamudPunchline>
+    <DalamudTags>occult;crescent;records;south horn;north horn;field operations</DalamudTags>
+    <PackageProjectUrl></PackageProjectUrl>
+
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

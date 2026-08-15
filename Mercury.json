@@ -1,0 +1,12 @@
+{
+  "Name": "Mercury",
+  "Author": "Aaron",
+  "Punchline": "See your Occult Records progress the moment you enter the Occult Crescent.",
+  "Description": "Track your Occult Crescent (South Horn / North Horn) records collection. Auto-opens when you enter the zone, with tabs for Acquired, Missing, and a Quests checklist, plus a Map view that plots survey points over the real zone map.",
+  "RepoUrl": "",
+  "ApplicableVersion": "any",
+  "Tags": [ "occult", "crescent", "records", "south horn", "north horn", "field operations" ],
+  "CategoryTags": [ "utility" ],
+  "LoadRequiredState": 0,
+  "LoadPriority": 0
+}
