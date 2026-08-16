@@ -159,6 +159,12 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.EndTabItem();
         }
 
+        if (ImGui.BeginTabItem($"Phantom BLU ({PhantomBlueMage.Spells.Count})###pblu"))
+        {
+            this.DrawPhantomBlue();
+            ImGui.EndTabItem();
+        }
+
         var mapFlags = this.selectMapTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
         this.selectMapTab = false;
         if (ImGui.BeginTabItem("Map###map", mapFlags))
@@ -892,6 +898,56 @@ public sealed class MainWindow : Window, IDisposable
     }
 
     // ---- Martial Memories (phantom weapon knowledge crystal) ----
+
+    private void DrawPhantomBlue()
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+        ImGui.TextWrapped("Phantom Blue Mage learns most spells from North Horn enemies (chance on their death). Click an enemy to scan the map for it.");
+        ImGui.PopStyleColor();
+        ImGui.Spacing();
+
+        if (!ImGui.BeginTable("##pbluTable", 3,
+                ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY))
+            return;
+
+        ImGui.TableSetupColumn("Spell", ImGuiTableColumnFlags.WidthFixed, 150);
+        ImGui.TableSetupColumn("Lv", ImGuiTableColumnFlags.WidthFixed, 28);
+        ImGui.TableSetupColumn("Learn from", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableHeadersRow();
+
+        foreach (var s in PhantomBlueMage.Spells)
+        {
+            ImGui.TableNextRow();
+
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(s.Name);
+
+            ImGui.TableNextColumn();
+            ImGui.TextDisabled(s.Level.ToString());
+
+            ImGui.TableNextColumn();
+            if (s.Enemy is null)
+            {
+                ImGui.TextDisabled(s.LearnFrom);
+            }
+            else
+            {
+                // clickable: send the enemy name to the map scanner and jump to the Map tab
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.55f, 0.75f, 0.95f, 1f));
+                if (ImGui.Selectable($"{s.LearnFrom}###pblu_{s.Name}"))
+                {
+                    this.scanTerm = s.Enemy;
+                    this.mapSelection = OccultMap.NorthHorn;
+                    this.selectMapTab = true;
+                }
+                ImGui.PopStyleColor();
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip($"Scan the map for {s.Enemy}");
+            }
+        }
+
+        ImGui.EndTable();
+    }
 
     private void DrawMartial()
     {
