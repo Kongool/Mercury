@@ -33,6 +33,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Show record description text inline (may contain lore spoilers).</summary>
     public bool ShowDescriptions { get; set; } = false;
 
+    /// <summary>Square Map-tab display size in pixels. The map is capped to the available window width.</summary>
+    public float MapDisplaySize { get; set; } = 800f;
+
     // Pot CE respawn tracking (manual "popped" timestamps, unix seconds; 0 = untracked).
     public long PotPoppedNorthUnix;
     public long PotPoppedSouthUnix;

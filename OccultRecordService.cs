@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
@@ -97,4 +98,19 @@ public sealed class OccultRecordService
     /// </summary>
     public unsafe bool InOccultCrescent()
         => PublicContentOccultCrescent.GetInstance() != null;
+
+    /// <summary>
+    /// Approximate age of the current Occult Crescent instance, based on the public-content
+    /// director's Unix start timestamp. Returns null while outside the instance or before
+    /// the director has supplied a valid timestamp.
+    /// </summary>
+    public unsafe long? GetInstanceAgeSeconds()
+    {
+        var director = PublicContentOccultCrescent.GetInstance();
+        if (director == null || director->DirectorStartTimestamp <= 0)
+            return null;
+
+        var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - director->DirectorStartTimestamp;
+        return Math.Max(0, age);
+    }
 }

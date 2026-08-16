@@ -21,6 +21,9 @@ public sealed class MainWindow : Window, IDisposable
     private bool selectMapTab;                        // request to jump to the Map tab next frame
     private string scanTerm = string.Empty;          // enemy name filter for the map scan
     private int martialZoneIdx = -1;                  // selected zone on the Martial radar (-1 = follow current)
+    private float mapZoom = 1f;
+    private Vector2 mapCenter = new(0.5f, 0.5f);
+    private OccultMap zoomMap = OccultMap.None;
 
     // reused each frame to avoid per-draw allocations
     private readonly List<OccultRecord> acquired = new();
@@ -713,9 +716,27 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawPots()
     {
+        var zone = MapCatalog.FromTerritory(Service.ClientState.TerritoryType);
+
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
         ImGui.TextWrapped("The two pot FATEs for the zone you're in, tracked live: UP now or how long since last up, plus the nearest crystal. The northern/southern label is set once both have been seen this session.");
         ImGui.PopStyleColor();
+
+        if (zone == OccultMap.NorthHorn && this.plugin.RecordService.GetInstanceAgeSeconds() is { } age)
+        {
+            const long firstNorthPotSeconds = 20 * 60;
+            if (age < firstNorthPotSeconds)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.35f, 0.85f, 0.35f, 1f));
+                ImGui.TextWrapped($"Fresh North Horn instance ({FormatTime((uint)age)} old): Daylight Pottery (north) should spawn first in about {FormatTime((uint)(firstNorthPotSeconds - age))}.");
+                ImGui.PopStyleColor();
+            }
+            else
+            {
+                ImGui.TextDisabled($"North Horn instance age: {FormatTime((uint)age)}. The initial Daylight Pottery (north) spawn window has passed; using live pot observations.");
+            }
+        }
+
         ImGui.Spacing();
 
         if (!ImGui.BeginTable("##potsTable", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH))
@@ -727,7 +748,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TableHeadersRow();
 
         // only the current zone's two pot FATEs (all four are real FATEs)
-        switch (MapCatalog.FromTerritory(Service.ClientState.TerritoryType))
+        switch (zone)
         {
             case OccultMap.SouthHorn:
                 this.DrawZonePots("Persistent Pots", "Pleading Pots");
@@ -1377,6 +1398,12 @@ public sealed class MainWindow : Window, IDisposable
             ? this.mapSelection
             : current != OccultMap.None ? current : OccultMap.SouthHorn;
 
+        if (this.zoomMap != map)
+        {
+            this.zoomMap = map;
+            this.ResetMapView();
+        }
+
         if (ImGui.RadioButton("South Horn", map == OccultMap.SouthHorn))
             this.mapSelection = OccultMap.SouthHorn;
         ImGui.SameLine();
@@ -1416,6 +1443,26 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.SameLine();
             ImGui.TextDisabled($"(alerting for \"{this.plugin.Config.ScanAlertName}\")");
         }
+
+        ImGui.TextUnformatted("Zoom");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("-##mapZoom"))
+            this.SetMapZoom(this.mapZoom / 1.25f);
+        ImGui.SameLine();
+        if (ImGui.SmallButton("+##mapZoom"))
+            this.SetMapZoom(this.mapZoom * 1.25f);
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Reset##mapZoom"))
+            this.ResetMapView();
+        ImGui.SameLine();
+        ImGui.TextDisabled($"{this.mapZoom * 100f:0}%  (mouse wheel to zoom; middle/right drag to pan)");
+
+        var mapDisplaySize = this.plugin.Config.MapDisplaySize;
+        ImGui.SetNextItemWidth(180f * ImGui.GetIO().FontGlobalScale);
+        if (ImGui.SliderFloat("Map size", ref mapDisplaySize, 400f, 1000f, "%.0f px"))
+            this.plugin.Config.MapDisplaySize = mapDisplaySize;
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            this.plugin.Config.Save();
 
         // scan the loaded objects once - drives both the list here and the map dots below
         var scanHits = new List<(string Name, Vector3 Pos, float Dist)>();
@@ -1469,17 +1516,54 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
-        // draw the square map fit to the available space
+        // Use the requested display size and only cap it to the available width. Deliberately
+        // do not cap to the remaining height: a large map can extend below the window and use
+        // the normal ImGui vertical scrollbar instead of wasting the wide area seen in-game.
         var avail = ImGui.GetContentRegionAvail();
-        var side = MathF.Max(96f, MathF.Min(avail.X, avail.Y));
+        var side = MathF.Max(96f, MathF.Min(avail.X, this.plugin.Config.MapDisplaySize));
         var origin = ImGui.GetCursorScreenPos();
-        ImGui.Image(tex.Handle, new Vector2(side, side));
+        var viewSize = 1f / this.mapZoom;
+        var halfView = viewSize * 0.5f;
+        this.mapCenter = Vector2.Clamp(this.mapCenter, new Vector2(halfView), new Vector2(1f - halfView));
+        var uv0 = this.mapCenter - new Vector2(halfView);
+        var uv1 = this.mapCenter + new Vector2(halfView);
+        ImGui.Image(tex.Handle, new Vector2(side, side), uv0, uv1);
+
+        var mapHovered = ImGui.IsItemHovered();
+        var io = ImGui.GetIO();
+        if (mapHovered && io.MouseWheel != 0f)
+        {
+            var relative = Vector2.Clamp((io.MousePos - origin) / side, Vector2.Zero, Vector2.One);
+            var anchor = uv0 + (relative * viewSize);
+            var nextZoom = Math.Clamp(this.mapZoom * MathF.Pow(1.2f, io.MouseWheel), 1f, 8f);
+            var nextView = 1f / nextZoom;
+            this.mapZoom = nextZoom;
+            this.mapCenter = anchor + ((new Vector2(0.5f) - relative) * nextView);
+            var nextHalf = nextView * 0.5f;
+            this.mapCenter = Vector2.Clamp(this.mapCenter, new Vector2(nextHalf), new Vector2(1f - nextHalf));
+        }
+
+        if (mapHovered && (ImGui.IsMouseDragging(ImGuiMouseButton.Middle) || ImGui.IsMouseDragging(ImGuiMouseButton.Right)))
+        {
+            this.mapCenter -= io.MouseDelta / side * viewSize;
+            var dragHalf = viewSize * 0.5f;
+            this.mapCenter = Vector2.Clamp(this.mapCenter, new Vector2(dragHalf), new Vector2(1f - dragHalf));
+        }
 
         var drawList = ImGui.GetWindowDrawList();
         var mouse = ImGui.GetIO().MousePos;
         var green = ImGui.GetColorU32(new Vector4(0.35f, 0.85f, 0.35f, 1f));
         var amber = ImGui.GetColorU32(new Vector4(0.95f, 0.70f, 0.25f, 1f));
         var outline = ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.85f));
+
+        Vector2 MapPoint(float x, float y)
+            => origin + (((new Vector2(x, y) - uv0) / viewSize) * side);
+
+        bool OnMap(Vector2 point, float margin = 0f)
+            => point.X >= origin.X - margin && point.X <= origin.X + side + margin &&
+               point.Y >= origin.Y - margin && point.Y <= origin.Y + side + margin;
+
+        drawList.PushClipRect(origin, origin + new Vector2(side), true);
 
         foreach (var r in this.plugin.RecordService.Records)
         {
@@ -1490,7 +1574,9 @@ public sealed class MainWindow : Window, IDisposable
             // map coordinate -> texture fraction. SizeFactor is 100 for both zones, so c = 1.
             var fx = (src.X - 1f) / 41f;
             var fy = (src.Y - 1f) / 41f;
-            var center = new Vector2(origin.X + (fx * side), origin.Y + (fy * side));
+            var center = MapPoint(fx, fy);
+            if (!OnMap(center, 12f))
+                continue;
 
             var has = collected.Contains(r.Id);
             var highlighted = r.Id == this.highlightRecordId;
@@ -1540,7 +1626,9 @@ public sealed class MainWindow : Window, IDisposable
             {
                 var cfx = (crystal.X - 1f) / 41f;
                 var cfy = (crystal.Y - 1f) / 41f;
-                var cc = new Vector2(origin.X + (cfx * side), origin.Y + (cfy * side));
+                var cc = MapPoint(cfx, cfy);
+                if (!OnMap(cc, 8f))
+                    continue;
 
                 // small diamond so crystals read differently from the round record/CE dots
                 drawList.AddQuadFilled(
@@ -1574,11 +1662,17 @@ public sealed class MainWindow : Window, IDisposable
 
         // live Critical Encounters - only for the zone you're actually standing in
         if (MapCatalog.FromTerritory(Service.ClientState.TerritoryType) != map)
+        {
+            drawList.PopClipRect();
             return;
+        }
 
         var container = DynamicEventContainer.GetInstance();
         if (container is null)
+        {
+            drawList.PopClipRect();
             return;
+        }
 
         var ceColour = ImGui.GetColorU32(new Vector4(0.95f, 0.35f, 0.30f, 1f));
         var events = container->Events;
@@ -1593,9 +1687,9 @@ public sealed class MainWindow : Window, IDisposable
                 continue; // no location yet
 
             // world coord -> texture fraction: (world + 1024) / 2048 (SizeFactor 100, offset 0)
-            var cx = origin.X + ((pos.X + 1024f) / 2048f * side);
-            var cy = origin.Y + ((pos.Z + 1024f) / 2048f * side);
-            var c = new Vector2(cx, cy);
+            var c = MapPoint((pos.X + 1024f) / 2048f, (pos.Z + 1024f) / 2048f);
+            if (!OnMap(c, 8f))
+                continue;
 
             drawList.AddCircleFilled(c, 6f, ceColour);
             drawList.AddCircle(c, 7f, outline, 0, 1.5f);
@@ -1626,7 +1720,10 @@ public sealed class MainWindow : Window, IDisposable
         // live FATEs - same zone-you're-standing-in scope as the CEs above
         var fateManager = FateManager.Instance();
         if (fateManager == null)
+        {
+            drawList.PopClipRect();
             return;
+        }
 
         var fateColour = ImGui.GetColorU32(new Vector4(0.68f, 0.45f, 0.95f, 1f));
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -1643,9 +1740,9 @@ public sealed class MainWindow : Window, IDisposable
             if (loc.X == 0f && loc.Z == 0f)
                 continue; // no location yet
 
-            var fx = origin.X + ((loc.X + 1024f) / 2048f * side);
-            var fy = origin.Y + ((loc.Z + 1024f) / 2048f * side);
-            var fc = new Vector2(fx, fy);
+            var fc = MapPoint((loc.X + 1024f) / 2048f, (loc.Z + 1024f) / 2048f);
+            if (!OnMap(fc, 8f))
+                continue;
 
             drawList.AddCircleFilled(fc, 6f, fateColour);
             drawList.AddCircle(fc, 7f, outline, 0, 1.5f);
@@ -1695,9 +1792,9 @@ public sealed class MainWindow : Window, IDisposable
                 continue; // no coord and not learned yet
             }
 
-            var pc = new Vector2(
-                origin.X + ((px + 1024f) / 2048f * side),
-                origin.Y + ((pz + 1024f) / 2048f * side));
+            var pc = MapPoint((px + 1024f) / 2048f, (pz + 1024f) / 2048f);
+            if (!OnMap(pc, 80f))
+                continue;
             var potUp = this.plugin.FateTracker.IsActive(pot.Name);
 
             drawList.AddCircleFilled(pc, 6f, potColour);
@@ -1732,9 +1829,9 @@ public sealed class MainWindow : Window, IDisposable
         var scanColour = ImGui.GetColorU32(new Vector4(1f, 0.92f, 0.15f, 1f));
         foreach (var hit in scanHits)
         {
-            var sc = new Vector2(
-                origin.X + ((hit.Pos.X + 1024f) / 2048f * side),
-                origin.Y + ((hit.Pos.Z + 1024f) / 2048f * side));
+            var sc = MapPoint((hit.Pos.X + 1024f) / 2048f, (hit.Pos.Z + 1024f) / 2048f);
+            if (!OnMap(sc, 80f))
+                continue;
 
             drawList.AddCircleFilled(sc, 5f, scanColour);
             drawList.AddCircle(sc, 6.5f, outline, 0, 1.5f);
@@ -1765,9 +1862,7 @@ public sealed class MainWindow : Window, IDisposable
         if (player is not null)
         {
             var wpos = player.Position;
-            var me = new Vector2(
-                origin.X + ((wpos.X + 1024f) / 2048f * side),
-                origin.Y + ((wpos.Z + 1024f) / 2048f * side));
+            var me = MapPoint((wpos.X + 1024f) / 2048f, (wpos.Z + 1024f) / 2048f);
 
             // FFXIV rotation: 0 faces south (+Z); forward = (sin, cos) in world (X, Z)
             var rot = player.Rotation;
@@ -1778,9 +1873,27 @@ public sealed class MainWindow : Window, IDisposable
             var b1 = me - (dir * (r * 0.6f)) + (perp * (r * 0.6f));
             var b2 = me - (dir * (r * 0.6f)) - (perp * (r * 0.6f));
 
-            drawList.AddTriangleFilled(tip, b1, b2, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 1f)));
-            drawList.AddTriangle(tip, b1, b2, ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.9f)), 1.5f);
+            if (OnMap(me, 8f))
+            {
+                drawList.AddTriangleFilled(tip, b1, b2, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 1f)));
+                drawList.AddTriangle(tip, b1, b2, ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.9f)), 1.5f);
+            }
         }
+
+        drawList.PopClipRect();
+    }
+
+    private void ResetMapView()
+    {
+        this.mapZoom = 1f;
+        this.mapCenter = new Vector2(0.5f, 0.5f);
+    }
+
+    private void SetMapZoom(float zoom)
+    {
+        this.mapZoom = Math.Clamp(zoom, 1f, 8f);
+        var half = 0.5f / this.mapZoom;
+        this.mapCenter = Vector2.Clamp(this.mapCenter, new Vector2(half), new Vector2(1f - half));
     }
 
     private void DrawTable(string id, List<OccultRecord> list, bool showDesc, string emptyMessage)
