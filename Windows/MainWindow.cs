@@ -722,9 +722,11 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TextWrapped("The two pot FATEs for the zone you're in, tracked live: UP now or how long since last up, plus the nearest crystal. The northern/southern label is set once both have been seen this session.");
         ImGui.PopStyleColor();
 
-        if (zone == OccultMap.NorthHorn && this.plugin.RecordService.GetInstanceAgeSeconds() is { } age)
+        if (zone == OccultMap.NorthHorn && this.plugin.RecordService.GetInstanceTimer() is { } timer)
         {
             const long firstNorthPotSeconds = 20 * 60;
+            var age = (long)timer.Elapsed;
+            ImGui.TextDisabled($"Instance timer: {FormatTime(timer.Remaining)} remaining ({FormatTime(timer.Elapsed)} elapsed)");
             if (age < firstNorthPotSeconds)
             {
                 ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.35f, 0.85f, 0.35f, 1f));

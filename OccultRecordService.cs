@@ -13,6 +13,12 @@ public sealed record OccultRecord(uint Id, string Name, string Description, uint
 /// <summary>An Occult Crescent story quest (JournalGenre 111), loaded from the Quest sheet.</summary>
 public sealed record OccultQuest(uint RowId, string Name, bool IsNorthHorn);
 
+/// <summary>The current public-content timer, in seconds.</summary>
+public readonly record struct OccultInstanceTimer(uint Remaining, uint Maximum)
+{
+    public uint Elapsed => this.Maximum > this.Remaining ? this.Maximum - this.Remaining : 0;
+}
+
 /// <summary>
 /// Loads the static Occult Records and Occult Crescent quest line from Lumina, and
 /// reads the player's live collection / quest-completion state out of the game client.
@@ -99,18 +105,19 @@ public sealed class OccultRecordService
     public unsafe bool InOccultCrescent()
         => PublicContentOccultCrescent.GetInstance() != null;
 
-    /// <summary>
-    /// Approximate age of the current Occult Crescent instance, based on the public-content
-    /// director's Unix start timestamp. Returns null while outside the instance or before
-    /// the director has supplied a valid timestamp.
-    /// </summary>
-    public unsafe long? GetInstanceAgeSeconds()
+    /// <summary>Reads the same remaining/max timer used by the in-game duty display.</summary>
+    public unsafe OccultInstanceTimer? GetInstanceTimer()
     {
         var director = PublicContentOccultCrescent.GetInstance();
-        if (director == null || director->DirectorStartTimestamp <= 0)
+        if (director == null)
             return null;
 
-        var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - director->DirectorStartTimestamp;
-        return Math.Max(0, age);
+        var maximum = director->GetContentTimeMax();
+        var remainingRaw = director->ContentTimeLeft;
+        var remaining = (uint)MathF.Max(0f, MathF.Ceiling(remainingRaw));
+        if (maximum == 0 || remaining > maximum)
+            return null;
+
+        return new OccultInstanceTimer(remaining, maximum);
     }
 }
