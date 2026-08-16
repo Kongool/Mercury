@@ -83,11 +83,13 @@ public sealed class MainWindow : Window, IDisposable
             this.plugin.Config.Save();
         }
 
-        // --- always-visible watched-FATE status (shard FATEs etc.) ---
+        var zone = MapCatalog.FromTerritory(Service.ClientState.TerritoryType);
+
+        // --- always-visible watched-FATE status and instance timer ---
         this.DrawWatchPanel();
+        this.DrawInstanceTimer(zone);
 
         // --- per-tab counts (up / total where it makes sense) ---
-        var zone = MapCatalog.FromTerritory(Service.ClientState.TerritoryType);
         var (ceUp, ceTotal) = this.CeCounts();
         var ceLabel = ceTotal > 0 ? $"CEs ({ceUp}/{ceTotal})###ce" : "CEs###ce";
 
@@ -722,23 +724,6 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TextWrapped("The two pot FATEs for the zone you're in, tracked live: UP now or how long since last up, plus the nearest crystal. The northern/southern label is set once both have been seen this session.");
         ImGui.PopStyleColor();
 
-        if (zone == OccultMap.NorthHorn && this.plugin.RecordService.GetInstanceTimer() is { } timer)
-        {
-            const long firstNorthPotSeconds = 20 * 60;
-            var age = (long)timer.Elapsed;
-            ImGui.TextDisabled($"Instance timer: {FormatTime(timer.Remaining)} remaining ({FormatTime(timer.Elapsed)} elapsed)");
-            if (age < firstNorthPotSeconds)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.35f, 0.85f, 0.35f, 1f));
-                ImGui.TextWrapped($"Fresh North Horn instance ({FormatTime((uint)age)} old): Daylight Pottery (north) should spawn first in about {FormatTime((uint)(firstNorthPotSeconds - age))}.");
-                ImGui.PopStyleColor();
-            }
-            else
-            {
-                ImGui.TextDisabled($"North Horn instance age: {FormatTime((uint)age)}. The initial Daylight Pottery (north) spawn window has passed; using live pot observations.");
-            }
-        }
-
         ImGui.Spacing();
 
         if (!ImGui.BeginTable("##potsTable", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH))
@@ -768,6 +753,37 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         ImGui.EndTable();
+    }
+
+    private void DrawInstanceTimer(OccultMap zone)
+    {
+        if (zone == OccultMap.None)
+            return;
+
+        var timer = this.plugin.RecordService.GetInstanceTimer();
+        if (timer is null)
+        {
+            ImGui.TextDisabled("Instance timer: waiting for game data...");
+            return;
+        }
+
+        var value = timer.Value;
+        ImGui.TextDisabled($"Instance timer: {FormatTime(value.Remaining)} remaining ({FormatTime(value.Elapsed)} elapsed)");
+
+        if (zone != OccultMap.NorthHorn)
+            return;
+
+        const uint firstNorthPotSeconds = 20 * 60;
+        if (value.Elapsed < firstNorthPotSeconds)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.35f, 0.85f, 0.35f, 1f));
+            ImGui.TextWrapped($"Fresh North Horn: Daylight Pottery (north) should spawn first in about {FormatTime(firstNorthPotSeconds - value.Elapsed)}.");
+            ImGui.PopStyleColor();
+        }
+        else
+        {
+            ImGui.TextDisabled("The initial Daylight Pottery (north) spawn window has passed; using live pot observations.");
+        }
     }
 
     // Draw a zone's two pot FATEs, labelling which is northern / southern once both
