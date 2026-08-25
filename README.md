@@ -52,4 +52,4 @@ The built `Mercury.dll` (plus its generated `Mercury.json` manifest) lands in `b
 ## Notes
 
 - Built against **Dalamud API 15 / .NET 10** (`Dalamud.NET.Sdk/15.0.0`), matching the current live Dalamud.
-- To publish to a plugin repo you'll additionally want an `images/icon.png` (512×512) referenced by the manifest.
+- The publishable plugin icon is available at `images/icon.png` (512×512, transparent PNG).
