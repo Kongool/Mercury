@@ -10,8 +10,41 @@ public sealed record ChallengeEntry(
     string Name,
     string Description,
     int RequiredAmount,
-    int Gil,
-    byte MenuOrder);
+    int RewardAmount,
+    int Reward0Type,
+    int Reward1Type,
+    byte MenuOrder)
+{
+    /// <summary>
+    /// Human-readable reward, resolved from the ContentsNote reward-type codes. The Occult
+    /// Crescent Field Ops entries reward Knowledge EXP (type 12) + Phantom EXP (type 13,
+    /// amount in the "gil" field), not gil; Eureka entries reward EXP + gil.
+    /// </summary>
+    public string RewardText()
+    {
+        var parts = new List<string>(2);
+
+        // The amount-bearing slot (the sheet's "GilRward" field carries this slot's value).
+        switch (this.Reward1Type)
+        {
+            case 13: parts.Add($"{this.RewardAmount:N0} Phantom EXP"); break;
+            case 3: parts.Add($"{this.RewardAmount:N0} gil"); break;
+            case 8: parts.Add($"{this.RewardAmount:N0} MGP"); break;
+            case 6: parts.Add($"{this.RewardAmount:N0} GC seals"); break;
+            case 11: parts.Add($"{this.RewardAmount:N0} cowries"); break;
+        }
+
+        // The EXP-type slot. The game scales and shows these in the zone ("applicable
+        // areas"), so no fixed number is listed - render the type as a label.
+        switch (this.Reward0Type)
+        {
+            case 12: parts.Add("Knowledge EXP"); break;
+            case 5 or 10 or 14 or 15: parts.Add("EXP"); break;
+        }
+
+        return string.Join("  -  ", parts);
+    }
+}
 
 /// <summary>
 /// Loads the "Field Operations" Challenge Log entries from the game's ContentsNote sheet -
@@ -66,6 +99,8 @@ public sealed class ChallengeLog
                 n.Description.ExtractText(),
                 n.RequiredAmount,
                 n.GilRward,
+                n.Reward0,
+                n.Reward1,
                 n.MenuOrder));
         }
 

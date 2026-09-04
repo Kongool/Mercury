@@ -1007,9 +1007,7 @@ public sealed class MainWindow : Window, IDisposable
                 ImGui.TextWrapped(e.Description);
                 ImGui.PopStyleColor();
             }
-            var reward = e.Gil > 0 ? $"{e.Gil} gil" : string.Empty;
-            if (hasProgress && prog.HasExp)
-                reward = reward.Length > 0 ? $"{reward}  -  {prog.Exp:N0} XP" : $"{prog.Exp:N0} XP";
+            var reward = e.RewardText();
             if (reward.Length > 0)
             {
                 ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.70f, 0.58f, 0.32f, 1f));

@@ -7,18 +7,16 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace Mercury;
 
-/// <summary>Live data for one Challenge Log entry scraped from the open in-game window.</summary>
-public readonly record struct ChallengeProgress(int Current, int Max, int Exp)
+/// <summary>Live count for one Challenge Log entry scraped from the open in-game window.</summary>
+public readonly record struct ChallengeProgress(int Current, int Max)
 {
     public bool HasCount => this.Max > 0;
-    public bool HasExp => this.Exp > 0;
 }
 
 /// <summary>
-/// Best-effort reader for live Challenge Log data. The game keeps no persistent per-entry
-/// counter and no flat EXP value (the sheet stores only a level-scaling multiplier), so we
-/// locate the open Challenge Log window among the loaded UI units by matching known entry
-/// names, then read the "current/max" count and the EXP reward the game itself prints.
+/// Best-effort reader for the live Challenge Log count. The game keeps no persistent
+/// per-entry counter, so we locate the open Challenge Log window among the loaded UI units
+/// by matching known entry names, then read the "current/max" the game prints beside each.
 ///
 /// This depends on the addon's value layout and only works while the window is open on the
 /// Field Operations tab. Everything is wrapped so a mismatch yields no data rather than
@@ -30,9 +28,7 @@ public sealed class ChallengeLogScraper
 
     private readonly Dictionary<string, uint> nameToRow = new(StringComparer.OrdinalIgnoreCase);
 
-    private const int Window = 12;            // neighbouring values to search around a name
-    private const int ExpFloor = 2000;        // EXP dwarfs gil (<=1400) and counts (<=60)
-    private const int ExpCeiling = 90_000_000; // ... but stays well under a unix timestamp
+    private const int Window = 12; // neighbouring values to search around a name
 
     public ChallengeLogScraper(ChallengeLog data)
     {
@@ -41,7 +37,7 @@ public sealed class ChallengeLogScraper
     }
 
     /// <summary>
-    /// Reads live count + EXP keyed by ContentsNote row id, or an empty map if the window
+    /// Reads the live count keyed by ContentsNote row id, or an empty map if the window
     /// isn't open / couldn't be parsed. Never throws.
     /// </summary>
     public unsafe Dictionary<uint, ChallengeProgress> TryScrape()
@@ -56,16 +52,13 @@ public sealed class ChallengeLogScraper
             var count = unit->AtkValuesCount;
             var values = unit->AtkValues;
 
-            // snapshot strings + ints so neighbours are cheap to inspect
+            // snapshot string values so neighbours are cheap to inspect
             var strings = new Dictionary<int, string>();
-            var ints = new Dictionary<int, int>();
             for (var i = 0; i < count; i++)
             {
                 ref var v = ref values[i];
                 if (v.Type == AtkValueType.String && v.String.Value != null)
                     strings[i] = MemoryHelper.ReadSeStringNullTerminated((nint)v.String.Value).TextValue;
-                else if (v.Type == AtkValueType.Int)
-                    ints[i] = v.Int;
             }
 
             foreach (var (idx, text) in strings)
@@ -73,34 +66,15 @@ public sealed class ChallengeLogScraper
                 if (!this.nameToRow.TryGetValue(text.Trim(), out var rowId))
                     continue;
 
-                var current = 0;
-                var max = 0;
-                var exp = 0;
-
-                // look outward from the name for its "x/y" count and its EXP reward (the
-                // largest sane number nearby - gil and the count are far smaller)
+                // look outward from the name for its "x/y" count
                 for (var d = 1; d <= Window; d++)
                 {
-                    foreach (var j in new[] { idx + d, idx - d })
+                    if (TryFraction(strings, idx + d, out var p) || TryFraction(strings, idx - d, out p))
                     {
-                        if (max == 0 && strings.TryGetValue(j, out var s))
-                        {
-                            var m = Fraction.Match(s);
-                            if (m.Success)
-                            {
-                                current = int.Parse(m.Groups[1].Value);
-                                max = int.Parse(m.Groups[2].Value);
-                            }
-                        }
-
-                        var candidate = NumberAt(strings, ints, j);
-                        if (candidate > ExpFloor && candidate < ExpCeiling && candidate > exp)
-                            exp = candidate;
+                        result[rowId] = p;
+                        break;
                     }
                 }
-
-                if (max > 0 || exp > 0)
-                    result[rowId] = new ChallengeProgress(current, max, exp);
             }
         }
         catch
@@ -139,19 +113,16 @@ public sealed class ChallengeLogScraper
         }
     }
 
-    // Reads a plain integer at index j - either an Int AtkValue or a comma-formatted number
-    // string (big UI numbers like EXP are usually preformatted strings). 0 if neither.
-    private static int NumberAt(Dictionary<int, string> strings, Dictionary<int, int> ints, int j)
+    private static bool TryFraction(Dictionary<int, string> strings, int idx, out ChallengeProgress p)
     {
-        if (ints.TryGetValue(j, out var iv))
-            return iv;
-        if (strings.TryGetValue(j, out var sv))
-        {
-            var digits = sv.Replace(",", string.Empty).Trim();
-            if (digits.Length > 0 && int.TryParse(digits, out var pv))
-                return pv;
-        }
-        return 0;
+        p = default;
+        if (!strings.TryGetValue(idx, out var s))
+            return false;
+        var m = Fraction.Match(s);
+        if (!m.Success)
+            return false;
+        p = new ChallengeProgress(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
+        return true;
     }
 
     // Locates the loaded UI unit that contains several of our known Challenge Log entry names.
