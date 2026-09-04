@@ -99,11 +99,43 @@ public sealed class OccultRecordService
         => QuestManager.IsQuestComplete(questRowId);
 
     /// <summary>
+    /// True if the given Challenge Log entry (ContentsNote row) is complete for the current
+    /// weekly cycle. Read live from the client, so it is accurate anywhere in the game.
+    /// </summary>
+    public unsafe bool IsChallengeComplete(uint rowId)
+    {
+        var notes = FFXIVClientStructs.FFXIV.Client.Game.UI.ContentsNote.Instance();
+        return notes != null && notes->IsContentNoteComplete((int)rowId);
+    }
+
+    /// <summary>Unix time of the next weekly Challenge Log reset, or null if not yet known.</summary>
+    public unsafe long? GetChallengeResetUnix()
+    {
+        var ui = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.Instance();
+        if (ui == null)
+            return null;
+
+        var ts = ui->NextChallengeLogResetTimestamp;
+        return ts > 0 ? ts : null;
+    }
+
+    /// <summary>
     /// True when the player is inside an Occult Crescent instance
     /// (The South Horn or The North Horn). No hardcoded territory IDs required.
     /// </summary>
     public unsafe bool InOccultCrescent()
         => PublicContentOccultCrescent.GetInstance() != null;
+
+    /// <summary>Current level of a phantom support job (by MKDSupportJob JobIndex), or 0 if unavailable.</summary>
+    public unsafe byte GetSupportJobLevel(int jobIndex)
+    {
+        var state = PublicContentOccultCrescent.GetState();
+        if (state == null)
+            return 0;
+
+        var levels = state->SupportJobLevels;
+        return jobIndex >= 0 && jobIndex < levels.Length ? levels[jobIndex] : (byte)0;
+    }
 
     /// <summary>Reads the same remaining/max timer used by the in-game duty display.</summary>
     public unsafe OccultInstanceTimer? GetInstanceTimer()

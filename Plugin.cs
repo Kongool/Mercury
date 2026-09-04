@@ -17,6 +17,8 @@ public sealed class Plugin : IDalamudPlugin
     public OccultRecordService RecordService { get; }
     public MartialMemories MartialMemories { get; }
     public MartialMemoriesScraper MartialScraper { get; }
+    public ChallengeLog ChallengeLog { get; }
+    public ChallengeLogScraper ChallengeScraper { get; }
     public CeTracker CeTracker { get; } = new();
     public FateTracker FateTracker { get; } = new();
     public ScanAlerter ScanAlerter { get; } = new();
@@ -33,6 +35,8 @@ public sealed class Plugin : IDalamudPlugin
         this.RecordService = new OccultRecordService();
         this.MartialMemories = new MartialMemories();
         this.MartialScraper = new MartialMemoriesScraper(this.MartialMemories);
+        this.ChallengeLog = new ChallengeLog();
+        this.ChallengeScraper = new ChallengeLogScraper(this.ChallengeLog);
 
         this.mainWindow = new MainWindow(this);
         this.windowSystem.AddWindow(this.mainWindow);
@@ -45,7 +49,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Service.CommandManager.AddHandler(CommandName, new CommandInfo(this.OnCommand)
         {
-            HelpMessage = "Toggle the Mercury window. \"/mercury mm\" dumps the open Martial Memories window to the log.",
+            HelpMessage = "Toggle the Mercury window. \"/mercury mm\" / \"/mercury cl\" dump the open Martial Memories / Challenge Log window to the log.",
         });
 
         Service.PluginInterface.UiBuilder.Draw += this.windowSystem.Draw;
@@ -109,11 +113,15 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>The name of the crystal nearest a known encounter, or null if position unknown.</summary>
     public string? NearestCrystal(string name)
     {
-        if (!this.TryGetLocation(name, out var x, out var z))
-            return null;
+        // A live-learned position is most accurate; fall back to a curated override so
+        // known encounters show their crystal before the plugin has ever seen them.
+        if (this.TryGetLocation(name, out var x, out var z))
+        {
+            var zone = MapCatalog.FromTerritory(Service.ClientState.TerritoryType);
+            return OccultAetherytes.Nearest(zone, x, z)?.Name;
+        }
 
-        var zone = MapCatalog.FromTerritory(Service.ClientState.TerritoryType);
-        return OccultAetherytes.Nearest(zone, x, z)?.Name;
+        return EncounterCrystals.For(name);
     }
 
     private void AlertEncounter(string name, string prefix, bool alertAny)
@@ -162,6 +170,12 @@ public sealed class Plugin : IDalamudPlugin
         if (arg.Equals("mm", StringComparison.OrdinalIgnoreCase) || arg.Equals("dump", StringComparison.OrdinalIgnoreCase))
         {
             Service.ChatGui.Print("[Mercury] " + this.MartialScraper.DumpToLog());
+            return;
+        }
+
+        if (arg.Equals("cl", StringComparison.OrdinalIgnoreCase))
+        {
+            Service.ChatGui.Print("[Mercury] " + this.ChallengeScraper.DumpToLog());
             return;
         }
 

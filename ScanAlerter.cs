@@ -1,22 +1,26 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 
 namespace Mercury;
 
 /// <summary>
-/// Watches the object table every frame for objects whose name matches a term and raises
-/// <see cref="EnemyAppeared"/> once per object - both for ones already present when the
-/// term is set and for new ones that stream in. Despawned objects are forgotten so they
-/// re-alert if they come back.
+/// Watches the object table for objects whose name matches a term and raises
+/// <see cref="EnemyAppeared"/> once when a matching name first appears. Dedup is by NAME
+/// (not entity id, which churns for big CE bosses), with a cooldown so a flickering or
+/// re-loading object can't spam - it only re-alerts after the name has been gone a while.
 /// </summary>
 public sealed class ScanAlerter
 {
-    private readonly HashSet<uint> seen = new();
+    private const long ReAlertCooldownSec = 60;
+
+    private readonly HashSet<string> presentLastFrame = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> lastAlertUnix = new(StringComparer.OrdinalIgnoreCase);
     private string activeTerm = string.Empty;
 
-    /// <summary>Raised when a matching object first appears. Args: name, world X, world Z.</summary>
+    /// <summary>Raised when a matching name first appears. Args: name, world X, world Z.</summary>
     public event Action<string, float, float>? EnemyAppeared;
 
     /// <summary>Kinds that can be a scannable enemy - mimics can be a chest (Treasure/EventObj), not just BattleNpc.</summary>
@@ -27,19 +31,23 @@ public sealed class ScanAlerter
     {
         if (string.IsNullOrEmpty(term) || term.Length < 2)
         {
-            this.seen.Clear();
+            this.presentLastFrame.Clear();
+            this.lastAlertUnix.Clear();
             this.activeTerm = string.Empty;
             return;
         }
 
-        // a changed term starts fresh, so whatever is already loaded alerts once
+        // a changed term starts fresh so whatever is loaded alerts once
         if (term != this.activeTerm)
         {
             this.activeTerm = term;
-            this.seen.Clear();
+            this.presentLastFrame.Clear();
+            this.lastAlertUnix.Clear();
         }
 
-        var current = new HashSet<uint>();
+        // names present this frame, and one representative position per name
+        var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var positions = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
         foreach (var obj in Service.ObjectTable)
         {
             if (!IsScanCandidate(obj))
@@ -50,15 +58,25 @@ public sealed class ScanAlerter
                 name.IndexOf(term, StringComparison.OrdinalIgnoreCase) < 0)
                 continue;
 
-            var id = obj.EntityId;
-            current.Add(id);
-
-            // Add returns true only the first time we see this entity for this term
-            if (this.seen.Add(id))
-                this.EnemyAppeared?.Invoke(name, obj.Position.X, obj.Position.Z);
+            if (present.Add(name))
+                positions[name] = obj.Position;
         }
 
-        // forget entities that despawned so they re-alert if they return
-        this.seen.IntersectWith(current);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        foreach (var name in present)
+        {
+            // alert only on a fresh appearance, and never more than once per cooldown
+            if (this.presentLastFrame.Contains(name))
+                continue;
+            if (this.lastAlertUnix.TryGetValue(name, out var last) && now - last < ReAlertCooldownSec)
+                continue;
+
+            this.lastAlertUnix[name] = now;
+            var p = positions[name];
+            this.EnemyAppeared?.Invoke(name, p.X, p.Z);
+        }
+
+        this.presentLastFrame.Clear();
+        this.presentLastFrame.UnionWith(present);
     }
 }

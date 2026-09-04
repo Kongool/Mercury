@@ -113,6 +113,15 @@ public sealed class MainWindow : Window, IDisposable
                 martialTotal += g.Objectives.Count;
         var martialLabel = martialTotal > 0 ? $"Martial Memories ({martialTotal})###martial" : "Martial Memories###martial";
 
+        var challengeEntries = this.plugin.ChallengeLog.Entries;
+        var challengeDone = 0;
+        foreach (var e in challengeEntries)
+            if (this.plugin.RecordService.IsChallengeComplete(e.RowId))
+                challengeDone++;
+        var challengeLabel = challengeEntries.Count > 0
+            ? $"Field Ops Log ({challengeDone}/{challengeEntries.Count})###chal"
+            : "Field Ops Log###chal";
+
         // --- tabs ---
         if (!ImGui.BeginTabBar("##tabs"))
             return;
@@ -159,7 +168,17 @@ public sealed class MainWindow : Window, IDisposable
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem($"Phantom BLU ({PhantomBlueMage.Spells.Count})###pblu"))
+        if (ImGui.BeginTabItem(challengeLabel))
+        {
+            this.DrawChallengeLog();
+            ImGui.EndTabItem();
+        }
+
+        var bluLearned = 0;
+        foreach (var s in PhantomBlueMage.Spells)
+            if (this.plugin.Config.LearnedBlueSpells.Contains(s.Name))
+                bluLearned++;
+        if (ImGui.BeginTabItem($"Phantom BLU ({bluLearned}/{PhantomBlueMage.Spells.Count})###pblu"))
         {
             this.DrawPhantomBlue();
             ImGui.EndTabItem();
@@ -897,19 +916,159 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TextUnformatted(remaining > 0 ? FormatTime((uint)remaining) : "-");
     }
 
+    // ---- Field Operations Challenge Log ----
+
+    private void DrawChallengeLog()
+    {
+        var log = this.plugin.ChallengeLog;
+        var entries = log.Entries;
+        if (entries.Count == 0)
+        {
+            ImGui.TextDisabled("Challenge Log data unavailable.");
+            return;
+        }
+
+        var done = 0;
+        foreach (var e in entries)
+            if (this.plugin.RecordService.IsChallengeComplete(e.RowId))
+                done++;
+
+        var frac = (float)done / entries.Count;
+        ImGui.Text($"{log.CategoryName}  {done} / {entries.Count}");
+        ImGui.ProgressBar(frac, new Vector2(-1, 0), $"{frac * 100f:0}%");
+
+        // weekly reset countdown, once the game has told us when it is
+        var reset = this.plugin.RecordService.GetChallengeResetUnix();
+        if (reset is { } r)
+        {
+            var left = r - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            if (left > 0)
+            {
+                var days = left / 86400;
+                var hours = (left % 86400) / 3600;
+                var mins = (left % 3600) / 60;
+                ImGui.TextDisabled($"Weekly reset in {days}d {hours}h {mins}m");
+            }
+        }
+
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+        ImGui.TextWrapped("Weekly Field Operations challenges (Occult Crescent, then Eureka). Completion is read live and resets each week. Open the in-game Challenge Log to the Field Operations tab to pull in the running counts and EXP rewards - the game only exposes those while that window is open.");
+        ImGui.PopStyleColor();
+        ImGui.Spacing();
+
+        // live count + EXP scraped from the open in-game window, keyed by row id
+        var scraped = this.plugin.ChallengeScraper.TryScrape();
+
+        if (!ImGui.BeginTable("##challengeTable", 3,
+                ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY))
+            return;
+
+        ImGui.TableSetupColumn("##chalStatus", ImGuiTableColumnFlags.WidthFixed, 24);
+        ImGui.TableSetupColumn("Challenge", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Progress", ImGuiTableColumnFlags.WidthFixed, 110);
+        ImGui.TableHeadersRow();
+
+        var green = new Vector4(0.35f, 0.85f, 0.35f, 1f);
+        var amber = new Vector4(0.95f, 0.70f, 0.25f, 1f);
+        var dim = new Vector4(0.60f, 0.60f, 0.60f, 1f);
+
+        foreach (var e in entries)
+        {
+            if (this.search.Length > 0 &&
+                e.Name.IndexOf(this.search, StringComparison.OrdinalIgnoreCase) < 0 &&
+                e.Description.IndexOf(this.search, StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            var complete = this.plugin.RecordService.IsChallengeComplete(e.RowId);
+            var hasProgress = scraped.TryGetValue(e.RowId, out var prog);
+            var hasLive = !complete && hasProgress && prog.HasCount;
+            var current = complete ? e.RequiredAmount : prog.Current;
+
+            ImGui.TableNextRow();
+
+            // completion glyph
+            ImGui.TableNextColumn();
+            ImGui.PushStyleColor(ImGuiCol.Text, complete ? green : dim);
+            ImGui.PushFont(UiBuilder.IconFont);
+            ImGui.TextUnformatted(complete
+                ? FontAwesomeIcon.Check.ToIconString()
+                : FontAwesomeIcon.Circle.ToIconString());
+            ImGui.PopFont();
+            ImGui.PopStyleColor();
+
+            // name + objective description + reward
+            ImGui.TableNextColumn();
+            ImGui.PushStyleColor(ImGuiCol.Text, complete ? green : new Vector4(0.88f, 0.88f, 0.9f, 1f));
+            ImGui.TextUnformatted(e.Name);
+            ImGui.PopStyleColor();
+            if (!string.IsNullOrEmpty(e.Description))
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, dim);
+                ImGui.TextWrapped(e.Description);
+                ImGui.PopStyleColor();
+            }
+            var reward = e.Gil > 0 ? $"{e.Gil} gil" : string.Empty;
+            if (hasProgress && prog.HasExp)
+                reward = reward.Length > 0 ? $"{reward}  -  {prog.Exp:N0} XP" : $"{prog.Exp:N0} XP";
+            if (reward.Length > 0)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.70f, 0.58f, 0.32f, 1f));
+                ImGui.TextUnformatted(reward);
+                ImGui.PopStyleColor();
+            }
+
+            // progress: X / required, with a bar. Completed rows read full; live counts only
+            // appear while the in-game Challenge Log window is open on this tab.
+            ImGui.TableNextColumn();
+            if (complete)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, green);
+                ImGui.TextUnformatted($"{e.RequiredAmount} / {e.RequiredAmount}");
+                ImGui.PopStyleColor();
+            }
+            else if (hasLive)
+            {
+                var barFrac = e.RequiredAmount > 0 ? Math.Clamp((float)current / e.RequiredAmount, 0f, 1f) : 0f;
+                ImGui.PushStyleColor(ImGuiCol.Text, amber);
+                ImGui.TextUnformatted($"{current} / {e.RequiredAmount}");
+                ImGui.PopStyleColor();
+                ImGui.PushStyleColor(ImGuiCol.PlotHistogram, amber);
+                ImGui.ProgressBar(barFrac, new Vector2(-1, 4), string.Empty);
+                ImGui.PopStyleColor();
+            }
+            else
+            {
+                // no live buffer (Challenge Log window not open on this tab): current unknown
+                ImGui.TextDisabled($"- / {e.RequiredAmount}");
+            }
+        }
+
+        ImGui.EndTable();
+    }
+
     // ---- Martial Memories (phantom weapon knowledge crystal) ----
 
     private void DrawPhantomBlue()
     {
+        // live Phantom Blue Mage level (JobIndex 14), when in the Occult Crescent
+        var level = this.plugin.RecordService.GetSupportJobLevel(14);
+        if (level > 0)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.55f, 0.7f, 0.95f, 1f));
+            ImGui.TextUnformatted($"Phantom Blue Mage - Level {level}");
+            ImGui.PopStyleColor();
+        }
+
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-        ImGui.TextWrapped("Phantom Blue Mage learns most spells from North Horn enemies (chance on their death). Click an enemy to scan the map for it.");
+        ImGui.TextWrapped("Tick a spell once you've learned it (the game doesn't expose learned state). Click an enemy to scan the map for it.");
         ImGui.PopStyleColor();
         ImGui.Spacing();
 
-        if (!ImGui.BeginTable("##pbluTable", 3,
+        if (!ImGui.BeginTable("##pbluTable", 4,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY))
             return;
 
+        ImGui.TableSetupColumn("##chk", ImGuiTableColumnFlags.WidthFixed, 24);
         ImGui.TableSetupColumn("Spell", ImGuiTableColumnFlags.WidthFixed, 150);
         ImGui.TableSetupColumn("Lv", ImGuiTableColumnFlags.WidthFixed, 28);
         ImGui.TableSetupColumn("Learn from", ImGuiTableColumnFlags.WidthStretch);
@@ -919,8 +1078,25 @@ public sealed class MainWindow : Window, IDisposable
         {
             ImGui.TableNextRow();
 
+            // learned checkbox (manual, persisted)
             ImGui.TableNextColumn();
+            var learned = this.plugin.Config.LearnedBlueSpells.Contains(s.Name);
+            if (ImGui.Checkbox($"##bluchk_{s.Name}", ref learned))
+            {
+                if (learned)
+                    this.plugin.Config.LearnedBlueSpells.Add(s.Name);
+                else
+                    this.plugin.Config.LearnedBlueSpells.Remove(s.Name);
+                this.plugin.Config.Save();
+            }
+
+            // spell name (dimmed until learned)
+            ImGui.TableNextColumn();
+            if (!learned)
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.60f, 0.60f, 0.60f, 1f));
             ImGui.TextUnformatted(s.Name);
+            if (!learned)
+                ImGui.PopStyleColor();
 
             ImGui.TableNextColumn();
             ImGui.TextDisabled(s.Level.ToString());

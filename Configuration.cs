@@ -45,6 +45,9 @@ public sealed class Configuration : IPluginConfiguration
     public bool ScanAlertEnabled;
     public string ScanAlertName = string.Empty;
 
+    // Phantom Blue Mage spells the player has marked as learned (by spell name).
+    public HashSet<string> LearnedBlueSpells { get; set; } = new();
+
     /// <summary>
     /// Learned world (X, Z) positions of FATEs/CEs by name, so the nearest-crystal hint
     /// survives across sessions. Filled the first time an encounter is seen live (the game
