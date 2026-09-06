@@ -21,6 +21,11 @@ public sealed class FateTracker
     private readonly HashSet<string> currentlyActive = new();
     private readonly Dictionary<string, (float X, float Z)> locations = new();
 
+    // per-active-FATE state used to detect a genuine completion (reached 100% while you were
+    // inside its ring), so the Challenge Log auto-increment doesn't count FATEs you skipped
+    private readonly Dictionary<string, byte> lastProgress = new();
+    private readonly HashSet<string> participated = new();
+
     // reused each frame to avoid per-update allocations
     private readonly HashSet<string> activeThisFrame = new();
     private readonly List<string> justEnded = new();
@@ -29,6 +34,9 @@ public sealed class FateTracker
 
     /// <summary>Raised the frame a FATE first becomes active (goes up or respawns).</summary>
     public event Action<string>? FateActivated;
+
+    /// <summary>Raised when a FATE you took part in ends at 100% (a genuine completion).</summary>
+    public event Action<string>? FateCompleted;
 
     /// <summary>Raised the first time this session a FATE's world position is observed.</summary>
     public event Action<string, float, float>? LocationLearned;
@@ -65,6 +73,8 @@ public sealed class FateTracker
             this.lastActiveUnix.Clear();
             this.currentlyActive.Clear();
             this.locations.Clear();
+            this.lastProgress.Clear();
+            this.participated.Clear();
             return;
         }
 
@@ -100,6 +110,12 @@ public sealed class FateTracker
                     this.LocationLearned?.Invoke(name, loc.X, loc.Z);
                 }
 
+                // Track progress and whether you're inside the ring, to judge completion when
+                // the FATE ends (it is removed from the list entirely once over).
+                this.lastProgress[name] = fate->Progress;
+                if (fate->Radius > 0f && WithinRange(loc.X, loc.Z, fate->Radius))
+                    this.participated.Add(name);
+
                 // Add returns true only on the frame it first becomes active - the
                 // moment to alert. It stays in the set (and re-fires on respawn).
                 if (this.currentlyActive.Add(name))
@@ -119,6 +135,25 @@ public sealed class FateTracker
         {
             this.currentlyActive.Remove(name);
             this.lastActiveUnix[name] = now;
+
+            // a FATE you were in that ended at 100% is a genuine completion
+            if (this.participated.Contains(name) &&
+                this.lastProgress.TryGetValue(name, out var prog) && prog >= 100)
+                this.FateCompleted?.Invoke(name);
+
+            this.participated.Remove(name);
+            this.lastProgress.Remove(name);
         }
+    }
+
+    // True if the local player is within <paramref name="range"/> yalms of a world (X, Z).
+    private static bool WithinRange(float x, float z, float range)
+    {
+        var player = Service.ObjectTable.LocalPlayer;
+        if (player is null)
+            return false;
+        var dx = player.Position.X - x;
+        var dz = player.Position.Z - z;
+        return (dx * dx) + (dz * dz) <= range * range;
     }
 }

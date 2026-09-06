@@ -12,14 +12,26 @@ namespace Mercury;
 /// </summary>
 public sealed class CeTracker
 {
+    // A CE's map area is large; being anywhere within this many yalms of its marker while
+    // it is being fought counts as participating in it.
+    private const float ParticipationRange = 60f;
+
     private readonly Dictionary<string, long> lastActiveUnix = new();
     private readonly HashSet<string> currentlyActive = new();
     private readonly Dictionary<string, (float X, float Z)> locations = new();
+
+    // per-active-CE state used to detect a genuine completion (reached 100% while you were
+    // present), so the Challenge Log auto-increment doesn't count fights you skipped or lost
+    private readonly Dictionary<string, byte> lastProgress = new();
+    private readonly HashSet<string> participated = new();
 
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     /// <summary>Raised the frame a CE first becomes active (spawns or opens registration).</summary>
     public event Action<string>? CeActivated;
+
+    /// <summary>Raised when a CE you took part in ends at 100% (a genuine completion).</summary>
+    public event Action<string>? CeCompleted;
 
     /// <summary>Raised the first time this session a CE's world position is observed.</summary>
     public event Action<string, float, float>? LocationLearned;
@@ -49,6 +61,8 @@ public sealed class CeTracker
             this.lastActiveUnix.Clear();
             this.currentlyActive.Clear();
             this.locations.Clear();
+            this.lastProgress.Clear();
+            this.participated.Clear();
             return;
         }
 
@@ -71,6 +85,11 @@ public sealed class CeTracker
                     this.LocationLearned?.Invoke(name, pos.X, pos.Z);
                 }
 
+                // Track progress and whether you're present, to judge completion on despawn.
+                this.lastProgress[name] = e.Progress;
+                if (WithinRange(pos.X, pos.Z, ParticipationRange))
+                    this.participated.Add(name);
+
                 // Add returns true only on the frame it first becomes active - the moment
                 // to alert (covers registration, warmup and battle states alike).
                 if (this.currentlyActive.Add(name))
@@ -81,6 +100,14 @@ public sealed class CeTracker
             {
                 // just despawned - anchor the "last up" time here
                 this.lastActiveUnix[name] = now;
+
+                // a CE you were in that ended at 100% is a genuine completion
+                if (this.participated.Contains(name) &&
+                    this.lastProgress.TryGetValue(name, out var prog) && prog >= 100)
+                    this.CeCompleted?.Invoke(name);
+
+                this.participated.Remove(name);
+                this.lastProgress.Remove(name);
             }
         }
     }
@@ -88,4 +115,15 @@ public sealed class CeTracker
     /// <summary>Seconds since this CE was last active this session, or null if not seen yet.</summary>
     public long? SecondsSinceLastActive(string name)
         => this.lastActiveUnix.TryGetValue(name, out var t) ? Now - t : null;
+
+    // True if the local player is within <paramref name="range"/> yalms of a world (X, Z).
+    private static bool WithinRange(float x, float z, float range)
+    {
+        var player = Service.ObjectTable.LocalPlayer;
+        if (player is null)
+            return false;
+        var dx = player.Position.X - x;
+        var dz = player.Position.Z - z;
+        return (dx * dx) + (dz * dz) <= range * range;
+    }
 }

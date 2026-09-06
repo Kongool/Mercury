@@ -952,12 +952,24 @@ public sealed class MainWindow : Window, IDisposable
         }
 
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-        ImGui.TextWrapped("Weekly Field Operations challenges (Occult Crescent, then Eureka). Completion is read live and resets each week. Open the in-game Challenge Log to the Field Operations tab to pull in the running counts and EXP rewards - the game only exposes those while that window is open.");
+        ImGui.TextWrapped("Weekly Field Operations challenges (Occult Crescent, then Eureka). Completion is read live and resets each week. Running counts come from the in-game Challenge Log: open it once to the Field Operations tab to sync (Mercury then remembers them). The CE and FATE challenges also advance live as you complete encounters - reopen the log any time to correct the estimate.");
         ImGui.PopStyleColor();
-        ImGui.Spacing();
 
-        // live count + EXP scraped from the open in-game window, keyed by row id
+        // live count scraped from the open in-game window, keyed by row id (cached after close)
         var scraped = this.plugin.ChallengeScraper.TryScrape();
+        var lastSync = this.plugin.ChallengeScraper.LastSyncUtc;
+        if (lastSync is { } sync)
+        {
+            var ago = (uint)Math.Max(0, (DateTimeOffset.UtcNow - new DateTimeOffset(sync, TimeSpan.Zero)).TotalSeconds);
+            ImGui.TextDisabled($"Counts synced {FormatTime(ago)} ago");
+        }
+        else
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.70f, 0.25f, 1f));
+            ImGui.TextUnformatted("Open the in-game Challenge Log (Field Operations tab) to sync counts.");
+            ImGui.PopStyleColor();
+        }
+        ImGui.Spacing();
 
         if (!ImGui.BeginTable("##challengeTable", 3,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY))

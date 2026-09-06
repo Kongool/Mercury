@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
         this.MartialMemories = new MartialMemories();
         this.MartialScraper = new MartialMemoriesScraper(this.MartialMemories);
         this.ChallengeLog = new ChallengeLog();
-        this.ChallengeScraper = new ChallengeLogScraper(this.ChallengeLog);
+        this.ChallengeScraper = new ChallengeLogScraper(this.ChallengeLog, this.Config);
 
         this.mainWindow = new MainWindow(this);
         this.windowSystem.AddWindow(this.mainWindow);
@@ -45,6 +45,8 @@ public sealed class Plugin : IDalamudPlugin
         this.CeTracker.CeActivated += this.OnCeActivated;
         this.FateTracker.LocationLearned += this.OnLocationLearned;
         this.CeTracker.LocationLearned += this.OnLocationLearned;
+        this.CeTracker.CeCompleted += this.OnCeCompleted;
+        this.FateTracker.FateCompleted += this.OnFateCompleted;
         this.ScanAlerter.EnemyAppeared += this.OnScanEnemyAppeared;
 
         Service.CommandManager.AddHandler(CommandName, new CommandInfo(this.OnCommand)
@@ -63,6 +65,7 @@ public sealed class Plugin : IDalamudPlugin
         this.CeTracker.Update();
         this.FateTracker.Update();
         this.ScanAlerter.Update(this.Config.ScanAlertEnabled ? this.Config.ScanAlertName : null);
+        this.ChallengeScraper.Update(this.RecordService.GetChallengeResetUnix());
 
         var inOccult = this.RecordService.InOccultCrescent();
 
@@ -81,6 +84,11 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCeActivated(string name)
         => this.AlertEncounter(name, "CE up", alertAny: false);
+
+    // A completed CE / FATE nudges the matching Challenge Log count live, between window syncs.
+    private void OnCeCompleted(string name) => this.ChallengeScraper.OnCriticalEncounterCompleted();
+
+    private void OnFateCompleted(string name) => this.ChallengeScraper.OnFateCompleted();
 
     // Persists a learned encounter position so the nearest-crystal hint outlives the session.
     private void OnLocationLearned(string name, float x, float z)
@@ -175,6 +183,12 @@ public sealed class Plugin : IDalamudPlugin
 
         if (arg.Equals("cl", StringComparison.OrdinalIgnoreCase))
         {
+            Service.ChatGui.Print("[Mercury] " + this.ChallengeScraper.Diagnose());
+            return;
+        }
+
+        if (arg.Equals("cldump", StringComparison.OrdinalIgnoreCase))
+        {
             Service.ChatGui.Print("[Mercury] " + this.ChallengeScraper.DumpToLog());
             return;
         }
@@ -188,6 +202,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         this.FateTracker.FateActivated -= this.OnFateActivated;
         this.CeTracker.CeActivated -= this.OnCeActivated;
+        this.CeTracker.CeCompleted -= this.OnCeCompleted;
+        this.FateTracker.FateCompleted -= this.OnFateCompleted;
         this.ScanAlerter.EnemyAppeared -= this.OnScanEnemyAppeared;
         this.FateTracker.LocationLearned -= this.OnLocationLearned;
         this.CeTracker.LocationLearned -= this.OnLocationLearned;

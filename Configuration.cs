@@ -66,5 +66,19 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Overlay live progress read from the open in-game Martial Memories window.</summary>
     public bool MartialUseScraping { get; set; } = true;
 
+    /// <summary>
+    /// Last Field Ops Challenge Log counts scraped from the open in-game window, keyed by
+    /// ContentsNote row id as [current, max]. Persisted so the counts survive reloads and
+    /// sessions - the game only exposes them while that window is open. Cleared automatically
+    /// when the weekly reset boundary moves (see <see cref="ChallengeCountsResetUnix"/>).
+    /// </summary>
+    public Dictionary<uint, int[]> ChallengeCounts { get; set; } = new();
+
+    /// <summary>The weekly-reset timestamp in effect when the counts were captured.</summary>
+    public long ChallengeCountsResetUnix;
+
+    /// <summary>When the counts were last captured (unix seconds), for the "synced X ago" hint.</summary>
+    public long ChallengeCountsSyncedUnix;
+
     public void Save() => Service.PluginInterface.SavePluginConfig(this);
 }
