@@ -12,10 +12,11 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for **FINAL FANTASY XIV*
   - **Quests** - the full Occult Crescent story quest line (read live from the game), grouped by South/North Horn, with a green check on completed quests and a `done / total` count on the tab.
 - Every record shows **how to get it** underneath its name - the exact quest name for quest-gated records (highlighted), or the survey-point coordinates / Critical Encounter / Forked Tower source for the rest.
 - A **CEs tab** shows live Critical Encounter timers - every active/upcoming CE with its status (join window / starting / active with progress), player count, and a countdown, read straight from the game's dynamic-event data.
+- A **Weather tab** calculates the deterministic North Horn weather cycle, shows the current weather and countdown, maps every weather to its weather-specific mob, and lists upcoming Crescent Bomb / Crescent Fool windows in the computer's local time.
 - The **Pots tab** reads the live public-content instance timer, shows elapsed/remaining time, detects a fresh North Horn instance, and counts down to the first expected spawn: **Daylight Pottery (north)** at approximately 20 minutes.
 - A **Map tab** renders the real in-game zone map (loaded from the game's own map texture) with every survey point plotted on it - green if collected, amber if still to find - plus live **Critical Encounter markers** (red) at their real world positions. Hover any marker for details. Zoom with the mouse wheel or `-` / `+` buttons, pan with middle/right drag, use **Reset** to return to the full map, and adjust the persistent **Map size** slider from 400 to 1000 pixels. Follows your current zone, or switch between South Horn and North Horn.
 - **Live and accurate:** your collected state is read from the game's persistent lore book (`MKDLoreModule.SeenLore`), so it reflects real progress whether or not the in-game book is open.
-- Search by name, and an optional inline descriptions view (hover a record for its description otherwise).
+- Search by record or weather-mob name. Matches such as `fool`, `bomb`, or `mimic` show the required weather, whether the mob is up now, and its next three exact spawn windows. An optional inline descriptions view is available for records (hover a record for its description otherwise).
 
 Type `/mercury` to toggle the window manually at any time.
 

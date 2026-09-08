@@ -73,7 +73,7 @@ public sealed class MainWindow : Window, IDisposable
 
         // --- search + descriptions toggle ---
         ImGui.SetNextItemWidth(200 * ImGui.GetIO().FontGlobalScale);
-        ImGui.InputTextWithHint("##search", "Search records...", ref this.search, 128);
+        ImGui.InputTextWithHint("##search", "Search records or weather mobs...", ref this.search, 128);
 
         var showDesc = this.plugin.Config.ShowDescriptions;
         ImGui.SameLine();
@@ -88,6 +88,7 @@ public sealed class MainWindow : Window, IDisposable
         // --- always-visible watched-FATE status and instance timer ---
         this.DrawWatchPanel();
         this.DrawInstanceTimer(zone);
+        this.DrawWeatherSearchResult();
 
         // --- per-tab counts (up / total where it makes sense) ---
         var (ceUp, ceTotal) = this.CeCounts();
@@ -128,12 +129,14 @@ public sealed class MainWindow : Window, IDisposable
 
         if (ImGui.BeginTabItem($"Acquired ({this.acquired.Count})###acquired"))
         {
+            DrawSyncHint();
             this.DrawTable("##tblAcquired", this.acquired, showDesc, "No records collected yet.");
             ImGui.EndTabItem();
         }
 
         if (ImGui.BeginTabItem($"Missing ({this.missing.Count})###missing"))
         {
+            DrawSyncHint();
             this.DrawTable("##tblMissing", this.missing, showDesc, "You have collected every record.");
             ImGui.EndTabItem();
         }
@@ -153,6 +156,12 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGui.BeginTabItem(fateLabel))
         {
             this.DrawFates();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Weather###weather"))
+        {
+            this.DrawWeather();
             ImGui.EndTabItem();
         }
 
@@ -197,6 +206,185 @@ public sealed class MainWindow : Window, IDisposable
 
     private static string FormatTime(uint seconds)
         => $"{seconds / 60}:{seconds % 60:00}";
+
+    private static string FormatWeatherWindow(OccultWeatherWindow window, DateTimeOffset now)
+    {
+        var start = window.Start.ToLocalTime();
+        var end = window.End.ToLocalTime();
+
+        if (window.Start <= now && now < window.End)
+            return $"NOW - {end:ddd M/d h:mm:ss tt}";
+
+        return start.Date == end.Date
+            ? $"{start:ddd M/d h:mm:ss tt} - {end:h:mm:ss tt}"
+            : $"{start:ddd M/d h:mm:ss tt} - {end:ddd M/d h:mm:ss tt}";
+    }
+
+    private void DrawWeatherSearchResult()
+    {
+        var query = this.search.Trim();
+        if (query.Length == 0)
+            return;
+
+        var matches = new List<OccultWeatherPattern>();
+        foreach (var pattern in OccultWeatherForecast.Patterns)
+        {
+            if (pattern.Mob is { } mob &&
+                (mob.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                 pattern.Name.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            {
+                matches.Add(pattern);
+            }
+        }
+
+        if (matches.Count == 0)
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        var current = OccultWeatherForecast.At(now);
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.75f, 0.35f, 1f));
+        ImGui.TextUnformatted(matches.Count == 1 ? "Weather mob found" : "Weather mobs found");
+        ImGui.PopStyleColor();
+
+        if (ImGui.BeginTable("##weatherSearchResults", 4,
+                ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp))
+        {
+            ImGui.TableSetupColumn("Mob", ImGuiTableColumnFlags.WidthFixed, 115f);
+            ImGui.TableSetupColumn("Weather", ImGuiTableColumnFlags.WidthFixed, 145f);
+            ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 72f);
+            ImGui.TableSetupColumn("Spawn windows", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableHeadersRow();
+
+            foreach (var pattern in matches)
+            {
+                var isActive = current.Pattern.Name.Equals(pattern.Name, StringComparison.Ordinal);
+
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(pattern.Mob!);
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(pattern.Name);
+                ImGui.TextDisabled($"{pattern.Chance}% of periods");
+
+                ImGui.TableNextColumn();
+                if (isActive)
+                    ImGui.TextColored(new Vector4(0.35f, 0.85f, 0.35f, 1f), "UP now");
+                else
+                    ImGui.TextDisabled("Waiting");
+
+                ImGui.TableNextColumn();
+                foreach (var window in OccultWeatherForecast.NextWindows(now, pattern.Name, 3))
+                    ImGui.TextUnformatted(FormatWeatherWindow(window, now));
+            }
+
+            ImGui.EndTable();
+        }
+
+        ImGui.TextDisabled("Weather mobs remain available for the full listed weather window.");
+    }
+
+    private void DrawWeather()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var current = OccultWeatherForecast.At(now);
+        var remaining = (uint)Math.Max(0, Math.Ceiling((current.End - now).TotalSeconds));
+        var activeColour = current.Pattern.Mob is null
+            ? new Vector4(0.65f, 0.75f, 0.90f, 1f)
+            : new Vector4(0.35f, 0.85f, 0.35f, 1f);
+
+        ImGui.TextColored(activeColour, current.Pattern.Name);
+        ImGui.SameLine();
+        ImGui.TextDisabled($"({current.Pattern.Chance}% pattern)");
+        ImGui.TextUnformatted($"Changes in {FormatTime(remaining)} at {current.End.ToLocalTime():h:mm:ss tt}");
+
+        if (current.Pattern.Mob is { } activeMob)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.35f, 0.85f, 0.35f, 1f));
+            ImGui.TextUnformatted($"{activeMob} is available now.");
+            ImGui.PopStyleColor();
+        }
+        else
+        {
+            ImGui.TextDisabled("No North Horn weather-specific mob uses Fair Skies.");
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.TextUnformatted("Bomb and Fool windows");
+        ImGui.TextDisabled("Times use your computer's local time. Adjacent matching periods are combined.");
+
+        if (ImGui.BeginTable("##priorityWeather", 3,
+                ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp))
+        {
+            ImGui.TableSetupColumn("Mob", ImGuiTableColumnFlags.WidthFixed, 110f);
+            ImGui.TableSetupColumn("Weather", ImGuiTableColumnFlags.WidthFixed, 145f);
+            ImGui.TableSetupColumn("Next windows", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableHeadersRow();
+
+            DrawWeatherWindowsRow("Crescent Bomb", "Clear Skies", now);
+            DrawWeatherWindowsRow("Crescent Fool", "Illusory Disturbances", now);
+
+            ImGui.EndTable();
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.TextUnformatted("Upcoming North Horn pattern");
+
+        if (ImGui.BeginTable("##weatherPattern", 3,
+                ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY,
+                new Vector2(0, 260f * ImGui.GetIO().FontGlobalScale)))
+        {
+            ImGui.TableSetupColumn("Starts", ImGuiTableColumnFlags.WidthFixed, 125f);
+            ImGui.TableSetupColumn("Weather", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("Mob", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableHeadersRow();
+
+            foreach (var window in OccultWeatherForecast.Upcoming(now, 18))
+            {
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                if (window.Start <= now && now < window.End)
+                    ImGui.TextColored(new Vector4(0.35f, 0.85f, 0.35f, 1f), "Now");
+                else
+                    ImGui.TextUnformatted(window.Start.ToLocalTime().ToString("ddd M/d h:mm:ss tt"));
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(window.Pattern.Name);
+                ImGui.SameLine();
+                ImGui.TextDisabled($"{window.Pattern.Chance}%");
+
+                ImGui.TableNextColumn();
+                if (window.Pattern.Mob is { } mob)
+                    ImGui.TextUnformatted(mob);
+                else
+                    ImGui.TextDisabled("-");
+            }
+
+            ImGui.EndTable();
+        }
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Auroral Mirages does not cancel the underlying cycle or despawn weather mobs.");
+    }
+
+    private static void DrawWeatherWindowsRow(string mob, string weather, DateTimeOffset now)
+    {
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        ImGui.TextUnformatted(mob);
+        ImGui.TableNextColumn();
+        ImGui.TextUnformatted(weather);
+        ImGui.TableNextColumn();
+
+        var windows = OccultWeatherForecast.NextWindows(now, weather, 3);
+        foreach (var window in windows)
+            ImGui.TextUnformatted(FormatWeatherWindow(window, now));
+    }
 
     /// <summary>Drops a real in-game map flag / waypoint at the given world position.</summary>
     private static unsafe void SetGameFlag(OccultMap map, Vector3 world)
@@ -2154,6 +2342,17 @@ public sealed class MainWindow : Window, IDisposable
         this.mapZoom = Math.Clamp(zoom, 1f, 8f);
         var half = 0.5f / this.mapZoom;
         this.mapCenter = Vector2.Clamp(this.mapCenter, new Vector2(half), new Vector2(1f - half));
+    }
+
+    // The game only writes a record into MKDLoreModule.SeenLore (what we read) once its
+    // page has been opened in the in-game Occult Record tablet - unlocking it in the field
+    // is not enough. Surface that so a lagging count doesn't look like a plugin bug.
+    private static void DrawSyncHint()
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+        ImGui.TextWrapped("Newly-found records appear here only after you open them in the in-game Occult Record tablet.");
+        ImGui.PopStyleColor();
+        ImGui.Spacing();
     }
 
     private void DrawTable(string id, List<OccultRecord> list, bool showDesc, string emptyMessage)

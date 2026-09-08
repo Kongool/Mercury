@@ -14,15 +14,20 @@ public sealed class CeTracker
 {
     // A CE's map area is large; being anywhere within this many yalms of its marker while
     // it is being fought counts as participating in it.
-    private const float ParticipationRange = 60f;
+    private const float ParticipationRange = 120f;
+
+    // Peak progress a CE must reach to count as completed. Just under 100 so we still catch
+    // it when the event flips to inactive the instant it finishes (the frame at 100% may
+    // never be sampled); failed/abandoned CEs end well below this.
+    private const byte CompletionProgress = 95;
 
     private readonly Dictionary<string, long> lastActiveUnix = new();
     private readonly HashSet<string> currentlyActive = new();
     private readonly Dictionary<string, (float X, float Z)> locations = new();
 
-    // per-active-CE state used to detect a genuine completion (reached 100% while you were
-    // present), so the Challenge Log auto-increment doesn't count fights you skipped or lost
-    private readonly Dictionary<string, byte> lastProgress = new();
+    // per-active-CE state used to detect a genuine completion (peaked near 100% while you
+    // were present), so the Challenge Log auto-increment doesn't count fights you skipped/lost
+    private readonly Dictionary<string, byte> maxProgress = new();
     private readonly HashSet<string> participated = new();
 
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -61,7 +66,7 @@ public sealed class CeTracker
             this.lastActiveUnix.Clear();
             this.currentlyActive.Clear();
             this.locations.Clear();
-            this.lastProgress.Clear();
+            this.maxProgress.Clear();
             this.participated.Clear();
             return;
         }
@@ -85,8 +90,9 @@ public sealed class CeTracker
                     this.LocationLearned?.Invoke(name, pos.X, pos.Z);
                 }
 
-                // Track progress and whether you're present, to judge completion on despawn.
-                this.lastProgress[name] = e.Progress;
+                // Track peak progress and whether you're present, to judge completion on despawn.
+                if (!this.maxProgress.TryGetValue(name, out var mp) || e.Progress > mp)
+                    this.maxProgress[name] = e.Progress;
                 if (WithinRange(pos.X, pos.Z, ParticipationRange))
                     this.participated.Add(name);
 
@@ -101,13 +107,16 @@ public sealed class CeTracker
                 // just despawned - anchor the "last up" time here
                 this.lastActiveUnix[name] = now;
 
-                // a CE you were in that ended at 100% is a genuine completion
-                if (this.participated.Contains(name) &&
-                    this.lastProgress.TryGetValue(name, out var prog) && prog >= 100)
+                // a CE you were in that peaked near 100% is a genuine completion
+                var wasParticipant = this.participated.Contains(name);
+                var peak = this.maxProgress.GetValueOrDefault(name);
+                var counted = wasParticipant && peak >= CompletionProgress;
+                Service.Log.Information($"[Mercury] CE '{name}' ended: peak={peak}% participated={wasParticipant} -> counted={counted}");
+                if (counted)
                     this.CeCompleted?.Invoke(name);
 
                 this.participated.Remove(name);
-                this.lastProgress.Remove(name);
+                this.maxProgress.Remove(name);
             }
         }
     }

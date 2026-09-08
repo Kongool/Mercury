@@ -21,9 +21,12 @@ public sealed class FateTracker
     private readonly HashSet<string> currentlyActive = new();
     private readonly Dictionary<string, (float X, float Z)> locations = new();
 
-    // per-active-FATE state used to detect a genuine completion (reached 100% while you were
-    // inside its ring), so the Challenge Log auto-increment doesn't count FATEs you skipped
-    private readonly Dictionary<string, byte> lastProgress = new();
+    // Peak progress a FATE must reach to count as completed (see CeTracker for the rationale).
+    private const byte CompletionProgress = 95;
+
+    // per-active-FATE state used to detect a genuine completion (peaked near 100% while you
+    // were inside its ring), so the Challenge Log auto-increment doesn't count FATEs you skipped
+    private readonly Dictionary<string, byte> maxProgress = new();
     private readonly HashSet<string> participated = new();
 
     // reused each frame to avoid per-update allocations
@@ -73,7 +76,7 @@ public sealed class FateTracker
             this.lastActiveUnix.Clear();
             this.currentlyActive.Clear();
             this.locations.Clear();
-            this.lastProgress.Clear();
+            this.maxProgress.Clear();
             this.participated.Clear();
             return;
         }
@@ -110,9 +113,10 @@ public sealed class FateTracker
                     this.LocationLearned?.Invoke(name, loc.X, loc.Z);
                 }
 
-                // Track progress and whether you're inside the ring, to judge completion when
-                // the FATE ends (it is removed from the list entirely once over).
-                this.lastProgress[name] = fate->Progress;
+                // Track peak progress and whether you're inside the ring, to judge completion
+                // when the FATE ends (it is removed from the list entirely once over).
+                if (!this.maxProgress.TryGetValue(name, out var mp) || fate->Progress > mp)
+                    this.maxProgress[name] = fate->Progress;
                 if (fate->Radius > 0f && WithinRange(loc.X, loc.Z, fate->Radius))
                     this.participated.Add(name);
 
@@ -136,13 +140,13 @@ public sealed class FateTracker
             this.currentlyActive.Remove(name);
             this.lastActiveUnix[name] = now;
 
-            // a FATE you were in that ended at 100% is a genuine completion
+            // a FATE you were in that peaked near 100% is a genuine completion
             if (this.participated.Contains(name) &&
-                this.lastProgress.TryGetValue(name, out var prog) && prog >= 100)
+                this.maxProgress.TryGetValue(name, out var prog) && prog >= CompletionProgress)
                 this.FateCompleted?.Invoke(name);
 
             this.participated.Remove(name);
-            this.lastProgress.Remove(name);
+            this.maxProgress.Remove(name);
         }
     }
 
