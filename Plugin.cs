@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Mercury.Windows;
+using Mercury.Windows.Dock;
 
 namespace Mercury;
 
@@ -25,6 +26,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly WindowSystem windowSystem = new("Mercury");
     private readonly MainWindow mainWindow;
+    private readonly DockLayoutShare dockLayout;
+    private readonly EdgeDockWindow edgeDock;
     private bool wasInOccult;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
@@ -40,6 +43,20 @@ public sealed class Plugin : IDalamudPlugin
 
         this.mainWindow = new MainWindow(this);
         this.windowSystem.AddWindow(this.mainWindow);
+        // Order 30 settles ties after Daedalus (10) and Charon (20). Fixed size because the body's scrolling
+        // tables and map take whatever height they're given.
+        this.dockLayout = new DockLayoutShare(Service.PluginInterface, "Mercury", order: 30);
+        this.edgeDock = new EdgeDockWindow(
+            [new EdgeDockWindow.Tab("main", "Mercury", () => true, () => this.mainWindow.Draw(), 760f, 900f)],
+            _ => (this.Config.EdgeDockEdge, this.Config.EdgeDockAlong),
+            (_, edge, along) =>
+            {
+                this.Config.EdgeDockEdge = edge;
+                this.Config.EdgeDockAlong = along;
+                this.Config.Save();
+            },
+            this.dockLayout);
+        this.windowSystem.AddWindow(this.edgeDock);
 
         this.FateTracker.FateActivated += this.OnFateActivated;
         this.CeTracker.CeActivated += this.OnCeActivated;
@@ -54,10 +71,17 @@ public sealed class Plugin : IDalamudPlugin
             HelpMessage = "Toggle the Mercury window. \"/mercury mm\" / \"/mercury cl\" dump the open Martial Memories / Challenge Log window to the log.",
         });
 
-        Service.PluginInterface.UiBuilder.Draw += this.windowSystem.Draw;
+        Service.PluginInterface.UiBuilder.Draw += this.DrawUi;
         Service.PluginInterface.UiBuilder.OpenMainUi += this.OpenMain;
         Service.PluginInterface.UiBuilder.OpenConfigUi += this.OpenMain;
         Service.Framework.Update += this.OnUpdate;
+    }
+
+    private void DrawUi()
+    {
+        // AnyTab() also refreshes which tabs the dock shows this frame, so it runs right before drawing.
+        this.edgeDock.IsOpen = this.Config.EdgeDockEnabled && Service.ClientState.IsLoggedIn && this.edgeDock.AnyTab();
+        this.windowSystem.Draw();
     }
 
     private void OnUpdate(IFramework framework)
@@ -66,6 +90,7 @@ public sealed class Plugin : IDalamudPlugin
         this.FateTracker.Update();
         this.ScanAlerter.Update(this.Config.ScanAlertEnabled ? this.Config.ScanAlertName : null);
         this.ChallengeScraper.Update(this.RecordService.GetChallengeResetUnix());
+
 
         var inOccult = this.RecordService.InOccultCrescent();
 
@@ -208,11 +233,12 @@ public sealed class Plugin : IDalamudPlugin
         this.FateTracker.LocationLearned -= this.OnLocationLearned;
         this.CeTracker.LocationLearned -= this.OnLocationLearned;
         Service.Framework.Update -= this.OnUpdate;
-        Service.PluginInterface.UiBuilder.Draw -= this.windowSystem.Draw;
+        Service.PluginInterface.UiBuilder.Draw -= this.DrawUi;
         Service.PluginInterface.UiBuilder.OpenMainUi -= this.OpenMain;
         Service.PluginInterface.UiBuilder.OpenConfigUi -= this.OpenMain;
         this.windowSystem.RemoveAllWindows();
         this.mainWindow.Dispose();
+        this.dockLayout.Dispose();
         Service.CommandManager.RemoveHandler(CommandName);
     }
 }

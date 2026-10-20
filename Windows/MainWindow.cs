@@ -9,6 +9,7 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using Mercury.Windows.Dock;
 
 namespace Mercury.Windows;
 
@@ -81,6 +82,52 @@ public sealed class MainWindow : Window, IDisposable
         {
             this.plugin.Config.ShowDescriptions = showDesc;
             this.plugin.Config.Save();
+        }
+
+        var dock = this.plugin.Config.EdgeDockEnabled;
+        ImGui.SameLine();
+        if (ImGui.Checkbox("Edge dock", ref dock))
+        {
+            this.plugin.Config.EdgeDockEnabled = dock;
+            this.plugin.Config.Save();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Pins a \"Mercury\" tab to the edge of the screen. Point at it and this window pops out\n"
+                             + "beside it; click it to keep it out, click again to let it go. Drag the tab and let go\n"
+                             + "near any edge, anywhere along it, and it stays there.");
+
+        if (dock)
+        {
+            var edge = this.plugin.Config.EdgeDockEdge;
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(80 * ImGui.GetIO().FontGlobalScale);
+            if (ImGui.BeginCombo("##dockEdge", edge.ToString()))
+            {
+                foreach (var e in Enum.GetValues<DockEdge>())
+                {
+                    if (ImGui.Selectable(e.ToString(), e == edge))
+                    {
+                        this.plugin.Config.EdgeDockEdge = e;
+                        this.plugin.Config.Save();
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Which edge of the screen the Mercury tab sits on.");
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Reset position"))
+            {
+                this.plugin.Config.ResetEdgeDockPlacement();
+                this.plugin.Config.Save();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Put the tab back on the right edge, in the middle.");
         }
 
         var zone = MapCatalog.FromTerritory(Service.ClientState.TerritoryType);

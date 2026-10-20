@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Dalamud.Configuration;
+using Mercury.Windows.Dock;
 
 namespace Mercury;
 
@@ -29,6 +30,22 @@ public sealed class Configuration : IPluginConfiguration
 
     /// <summary>Automatically open the window when entering the Occult Crescent, close it when leaving.</summary>
     public bool AutoOpenInOccult { get; set; } = true;
+
+    /// <summary>Show the slim "Mercury" tab on the screen edge (shares the edges with the Daedalus / Charon tabs).</summary>
+    public bool EdgeDockEnabled { get; set; } = true;
+
+    /// <summary>Which screen edge the Mercury tab is pinned to. Dragging the tab changes it.</summary>
+    public DockEdge EdgeDockEdge { get; set; } = DockEdge.Right;
+
+    /// <summary>Where along its edge the Mercury tab sits: its centre as a fraction of the edge (0.5 = the middle).</summary>
+    public float EdgeDockAlong { get; set; } = 0.5f;
+
+    /// <summary>The tab back to the right edge, in the middle.</summary>
+    public void ResetEdgeDockPlacement()
+    {
+        this.EdgeDockEdge = DockEdge.Right;
+        this.EdgeDockAlong = 0.5f;
+    }
 
     /// <summary>Show record description text inline (may contain lore spoilers).</summary>
     public bool ShowDescriptions { get; set; } = false;
