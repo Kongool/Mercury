@@ -101,6 +101,16 @@ public sealed unsafe class EdgeDockWindow : Window
         return _visible.Count > 0;
     }
 
+    /// <summary>(Mercury addition) Pin a tab's panel open, or unpin it - the same as clicking the tab.</summary>
+    public void TogglePin(string tabId) => _hover.Click(tabId);
+
+    /// <summary>(Mercury addition) Pin a tab's panel open; does nothing if it already is.</summary>
+    public void Pin(string tabId)
+    {
+        if (_hover.Pinned != tabId)
+            _hover.Click(tabId);
+    }
+
     public override void PreDraw() => Position = ImGui.GetMainViewport().WorkPos;
 
     public override void Draw()

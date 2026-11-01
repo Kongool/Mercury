@@ -23,12 +23,12 @@ public sealed class Plugin : IDalamudPlugin
     public CeTracker CeTracker { get; } = new();
     public FateTracker FateTracker { get; } = new();
     public ScanAlerter ScanAlerter { get; } = new();
+    public FieldProgress Progress { get; }
 
     private readonly WindowSystem windowSystem = new("Mercury");
     private readonly MainWindow mainWindow;
     private readonly DockLayoutShare dockLayout;
     private readonly EdgeDockWindow edgeDock;
-    private bool wasInOccult;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -40,14 +40,15 @@ public sealed class Plugin : IDalamudPlugin
         this.MartialScraper = new MartialMemoriesScraper(this.MartialMemories);
         this.ChallengeLog = new ChallengeLog();
         this.ChallengeScraper = new ChallengeLogScraper(this.ChallengeLog, this.Config);
+        this.Progress = new FieldProgress(this.Config);
 
+        // Mercury has no window of its own: its pages only show in the edge-dock tab's panel.
         this.mainWindow = new MainWindow(this);
-        this.windowSystem.AddWindow(this.mainWindow);
         // Order 30 settles ties after Daedalus (10) and Charon (20). Fixed size because the body's scrolling
         // tables and map take whatever height they're given.
         this.dockLayout = new DockLayoutShare(Service.PluginInterface, "Mercury", order: 30);
         this.edgeDock = new EdgeDockWindow(
-            [new EdgeDockWindow.Tab("main", "Mercury", () => true, () => this.mainWindow.Draw(), 760f, 900f)],
+            [new EdgeDockWindow.Tab("main", "Mercury", () => true, () => this.mainWindow.Draw(), 900f, 900f)],
             _ => (this.Config.EdgeDockEdge, this.Config.EdgeDockAlong),
             (_, edge, along) =>
             {
@@ -68,12 +69,12 @@ public sealed class Plugin : IDalamudPlugin
 
         Service.CommandManager.AddHandler(CommandName, new CommandInfo(this.OnCommand)
         {
-            HelpMessage = "Toggle the Mercury window. \"/mercury mm\" / \"/mercury cl\" dump the open Martial Memories / Challenge Log window to the log.",
+            HelpMessage = "Pin or unpin the Mercury edge tab (turns the tab back on if it was off). \"/mercury mm\" / \"/mercury cl\" dump the open Martial Memories / Challenge Log window to the log.",
         });
 
         Service.PluginInterface.UiBuilder.Draw += this.DrawUi;
         Service.PluginInterface.UiBuilder.OpenMainUi += this.OpenMain;
-        Service.PluginInterface.UiBuilder.OpenConfigUi += this.OpenMain;
+        Service.PluginInterface.UiBuilder.OpenConfigUi += this.OpenConfig;
         Service.Framework.Update += this.OnUpdate;
     }
 
@@ -90,14 +91,7 @@ public sealed class Plugin : IDalamudPlugin
         this.FateTracker.Update();
         this.ScanAlerter.Update(this.Config.ScanAlertEnabled ? this.Config.ScanAlertName : null);
         this.ChallengeScraper.Update(this.RecordService.GetChallengeResetUnix());
-
-
-        var inOccult = this.RecordService.InOccultCrescent();
-
-        if (this.Config.AutoOpenInOccult && inOccult != this.wasInOccult)
-            this.mainWindow.IsOpen = inOccult;
-
-        this.wasInOccult = inOccult;
+        this.Progress.Update();
     }
 
     // Raised the instant a FATE or CE goes up. The watch-list (AlertFates) is shared
@@ -111,9 +105,18 @@ public sealed class Plugin : IDalamudPlugin
         => this.AlertEncounter(name, "CE up", alertAny: false);
 
     // A completed CE / FATE nudges the matching Challenge Log count live, between window syncs.
-    private void OnCeCompleted(string name) => this.ChallengeScraper.OnCriticalEncounterCompleted();
+    // The log is Occult Crescent only, so Eureka / Bozja completions don't count.
+    private void OnCeCompleted(string name)
+    {
+        if (this.RecordService.InOccultCrescent())
+            this.ChallengeScraper.OnCriticalEncounterCompleted();
+    }
 
-    private void OnFateCompleted(string name) => this.ChallengeScraper.OnFateCompleted();
+    private void OnFateCompleted(string name)
+    {
+        if (this.RecordService.InOccultCrescent())
+            this.ChallengeScraper.OnFateCompleted();
+    }
 
     // Persists a learned encounter position so the nearest-crystal hint outlives the session.
     private void OnLocationLearned(string name, float x, float z)
@@ -218,10 +221,32 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        this.mainWindow.Toggle();
+        this.EnsureDockOn();
+        this.edgeDock.TogglePin("main");
     }
 
-    private void OpenMain() => this.mainWindow.IsOpen = true;
+    // The plugin installer's Open / Settings buttons pin the edge tab's panel open.
+    private void OpenMain()
+    {
+        this.EnsureDockOn();
+        this.edgeDock.Pin("main");
+    }
+
+    private void OpenConfig()
+    {
+        this.OpenMain();
+        this.mainWindow.ShowSettings();
+    }
+
+    // The tab is Mercury's only UI, so asking for Mercury while it's switched off turns it back on.
+    private void EnsureDockOn()
+    {
+        if (this.Config.EdgeDockEnabled)
+            return;
+        this.Config.EdgeDockEnabled = true;
+        this.Config.Save();
+        Service.ChatGui.Print("[Mercury] Edge tab turned back on.");
+    }
 
     public void Dispose()
     {
@@ -235,7 +260,7 @@ public sealed class Plugin : IDalamudPlugin
         Service.Framework.Update -= this.OnUpdate;
         Service.PluginInterface.UiBuilder.Draw -= this.DrawUi;
         Service.PluginInterface.UiBuilder.OpenMainUi -= this.OpenMain;
-        Service.PluginInterface.UiBuilder.OpenConfigUi -= this.OpenMain;
+        Service.PluginInterface.UiBuilder.OpenConfigUi -= this.OpenConfig;
         this.windowSystem.RemoveAllWindows();
         this.mainWindow.Dispose();
         this.dockLayout.Dispose();

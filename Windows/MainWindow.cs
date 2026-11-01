@@ -9,17 +9,15 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
-using Mercury.Windows.Dock;
 
 namespace Mercury.Windows;
 
-public sealed class MainWindow : Window, IDisposable
+public sealed partial class MainWindow : Window, IDisposable
 {
     private readonly Plugin plugin;
     private string search = string.Empty;
     private OccultMap mapSelection = OccultMap.None; // None = follow the current zone
     private uint highlightRecordId;                  // survey point to emphasise on the map (0 = none)
-    private bool selectMapTab;                        // request to jump to the Map tab next frame
     private string scanTerm = string.Empty;          // enemy name filter for the map scan
     private int martialZoneIdx = -1;                  // selected zone on the Martial radar (-1 = follow current)
     private float mapZoom = 1f;
@@ -31,225 +29,17 @@ public sealed class MainWindow : Window, IDisposable
     private readonly List<OccultRecord> missing = new();
 
     public MainWindow(Plugin plugin)
-        : base("Mercury - Occult Records###MercuryMain")
+        : base("Mercury - Field Operations###MercuryMain")
     {
         this.plugin = plugin;
         this.SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(340, 340),
+            MinimumSize = new Vector2(640, 420),
             MaximumSize = new Vector2(1200, 1600),
         };
     }
 
     public void Dispose() { }
-
-    public override void Draw()
-    {
-        var records = this.plugin.RecordService.Records;
-        var collected = this.plugin.RecordService.GetCollectedIds();
-
-        this.acquired.Clear();
-        this.missing.Clear();
-
-        foreach (var r in records)
-        {
-            if (collected.Contains(r.Id))
-                this.acquired.Add(r);
-            else
-                this.missing.Add(r);
-        }
-
-        var quests = this.plugin.RecordService.Quests;
-        var questsDone = 0;
-        foreach (var q in quests)
-            if (this.plugin.RecordService.IsQuestComplete(q.RowId))
-                questsDone++;
-
-        var total = records.Count;
-
-        // --- progress ---
-        var frac = total == 0 ? 0f : (float)this.acquired.Count / total;
-        ImGui.Text($"Collected {this.acquired.Count} / {total}");
-        ImGui.ProgressBar(frac, new Vector2(-1, 0), $"{frac * 100f:0}%");
-
-        // --- search + descriptions toggle ---
-        ImGui.SetNextItemWidth(200 * ImGui.GetIO().FontGlobalScale);
-        ImGui.InputTextWithHint("##search", "Search records or weather mobs...", ref this.search, 128);
-
-        var showDesc = this.plugin.Config.ShowDescriptions;
-        ImGui.SameLine();
-        if (ImGui.Checkbox("Descriptions", ref showDesc))
-        {
-            this.plugin.Config.ShowDescriptions = showDesc;
-            this.plugin.Config.Save();
-        }
-
-        var dock = this.plugin.Config.EdgeDockEnabled;
-        ImGui.SameLine();
-        if (ImGui.Checkbox("Edge dock", ref dock))
-        {
-            this.plugin.Config.EdgeDockEnabled = dock;
-            this.plugin.Config.Save();
-        }
-
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Pins a \"Mercury\" tab to the edge of the screen. Point at it and this window pops out\n"
-                             + "beside it; click it to keep it out, click again to let it go. Drag the tab and let go\n"
-                             + "near any edge, anywhere along it, and it stays there.");
-
-        if (dock)
-        {
-            var edge = this.plugin.Config.EdgeDockEdge;
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(80 * ImGui.GetIO().FontGlobalScale);
-            if (ImGui.BeginCombo("##dockEdge", edge.ToString()))
-            {
-                foreach (var e in Enum.GetValues<DockEdge>())
-                {
-                    if (ImGui.Selectable(e.ToString(), e == edge))
-                    {
-                        this.plugin.Config.EdgeDockEdge = e;
-                        this.plugin.Config.Save();
-                    }
-                }
-
-                ImGui.EndCombo();
-            }
-
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Which edge of the screen the Mercury tab sits on.");
-
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Reset position"))
-            {
-                this.plugin.Config.ResetEdgeDockPlacement();
-                this.plugin.Config.Save();
-            }
-
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Put the tab back on the right edge, in the middle.");
-        }
-
-        var zone = MapCatalog.FromTerritory(Service.ClientState.TerritoryType);
-
-        // --- always-visible watched-FATE status and instance timer ---
-        this.DrawWatchPanel();
-        this.DrawInstanceTimer(zone);
-        this.DrawWeatherSearchResult();
-
-        // --- per-tab counts (up / total where it makes sense) ---
-        var (ceUp, ceTotal) = this.CeCounts();
-        var ceLabel = ceTotal > 0 ? $"CEs ({ceUp}/{ceTotal})###ce" : "CEs###ce";
-
-        var fateNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var n in this.plugin.FateTracker.TrackedNames)
-            fateNames.Add(n);
-        foreach (var n in KnownFates.For(zone))
-            fateNames.Add(n);
-        var fateLabel = fateNames.Count > 0 ? $"FATEs ({this.ActiveFateCount()}/{fateNames.Count})###fate" : "FATEs###fate";
-
-        var potNames = PotFates.For(zone);
-        var potsUp = 0;
-        foreach (var p in potNames)
-            if (this.plugin.FateTracker.IsActive(p.Name))
-                potsUp++;
-        var potLabel = potNames.Count > 0 ? $"Pots ({potsUp}/{potNames.Count})###pots" : "Pots###pots";
-
-        var martialTotal = 0;
-        foreach (var cat in this.plugin.MartialMemories.Categories)
-            foreach (var g in cat.Groups)
-                martialTotal += g.Objectives.Count;
-        var martialLabel = martialTotal > 0 ? $"Martial Memories ({martialTotal})###martial" : "Martial Memories###martial";
-
-        var challengeEntries = this.plugin.ChallengeLog.Entries;
-        var challengeDone = 0;
-        foreach (var e in challengeEntries)
-            if (this.plugin.RecordService.IsChallengeComplete(e.RowId))
-                challengeDone++;
-        var challengeLabel = challengeEntries.Count > 0
-            ? $"Field Ops Log ({challengeDone}/{challengeEntries.Count})###chal"
-            : "Field Ops Log###chal";
-
-        // --- tabs ---
-        if (!ImGui.BeginTabBar("##tabs"))
-            return;
-
-        if (ImGui.BeginTabItem($"Acquired ({this.acquired.Count})###acquired"))
-        {
-            DrawSyncHint();
-            this.DrawTable("##tblAcquired", this.acquired, showDesc, "No records collected yet.");
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem($"Missing ({this.missing.Count})###missing"))
-        {
-            DrawSyncHint();
-            this.DrawTable("##tblMissing", this.missing, showDesc, "You have collected every record.");
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem($"Quests ({questsDone}/{quests.Count})###quest"))
-        {
-            this.DrawQuests(quests, collected);
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem(ceLabel))
-        {
-            this.DrawCriticalEncounters();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem(fateLabel))
-        {
-            this.DrawFates();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem("Weather###weather"))
-        {
-            this.DrawWeather();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem(potLabel))
-        {
-            this.DrawPots();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem(martialLabel))
-        {
-            this.DrawMartial();
-            ImGui.EndTabItem();
-        }
-
-        if (ImGui.BeginTabItem(challengeLabel))
-        {
-            this.DrawChallengeLog();
-            ImGui.EndTabItem();
-        }
-
-        var bluLearned = 0;
-        foreach (var s in PhantomBlueMage.Spells)
-            if (this.plugin.Config.LearnedBlueSpells.Contains(s.Name))
-                bluLearned++;
-        if (ImGui.BeginTabItem($"Phantom BLU ({bluLearned}/{PhantomBlueMage.Spells.Count})###pblu"))
-        {
-            this.DrawPhantomBlue();
-            ImGui.EndTabItem();
-        }
-
-        var mapFlags = this.selectMapTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
-        this.selectMapTab = false;
-        if (ImGui.BeginTabItem("Map###map", mapFlags))
-        {
-            this.DrawMap(collected);
-            ImGui.EndTabItem();
-        }
-
-        ImGui.EndTabBar();
-    }
 
     private static string FormatTime(uint seconds)
         => $"{seconds / 60}:{seconds % 60:00}";
@@ -444,32 +234,6 @@ public sealed class MainWindow : Window, IDisposable
         agent->OpenMapByMapId(MapCatalog.MapRowId(map), MapCatalog.TerritoryId(map));
     }
 
-    // (currently up, total roster) among the zone's Critical Encounters.
-    private unsafe (int Up, int Total) CeCounts()
-    {
-        var container = DynamicEventContainer.GetInstance();
-        if (container is null)
-            return (0, 0);
-
-        int up = 0, total = 0;
-        var events = container->Events;
-        for (var i = 0; i < events.Length; i++)
-        {
-            ref var e = ref events[i];
-            if (e.State != DynamicEventState.Inactive)
-            {
-                up++;
-                total++;
-            }
-            else if (!string.IsNullOrEmpty(e.Name.ToString()))
-            {
-                total++;
-            }
-        }
-
-        return (up, total);
-    }
-
     // How many FATEs are running or preparing right now.
     private unsafe int ActiveFateCount()
     {
@@ -499,11 +263,11 @@ public sealed class MainWindow : Window, IDisposable
 
     private unsafe void DrawCriticalEncounters()
     {
-        var container = DynamicEventContainer.GetInstance();
+        var container = FieldEvents.Container();
         if (container is null)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-            ImGui.TextWrapped("Enter the Occult Crescent to track Critical Encounters.");
+            ImGui.TextWrapped("Enter a field op to track Critical Encounters.");
             ImGui.PopStyleColor();
             return;
         }
@@ -525,7 +289,7 @@ public sealed class MainWindow : Window, IDisposable
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-        ImGui.TextWrapped("Active rows show time left. Idle CEs show how long since last up this session. Right-click a CE (bell) to alert with sound when it spawns - e.g. the shard CEs. Pots have their own tab.");
+        ImGui.TextWrapped("Active rows show time left. Idle CEs show how long since last up this session. Right-click a CE (bell) to alert with sound when it spawns - e.g. the shard CEs.");
         ImGui.PopStyleColor();
 
         // diagnostics first so it is always reachable (the list below scrolls internally)
@@ -622,7 +386,7 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (!this.plugin.Config.ShowWatchPanel || this.plugin.Config.AlertFates.Count == 0)
             return;
-        if (!this.plugin.RecordService.InOccultCrescent())
+        if (FieldZones.Current == FieldZone.None)
             return;
         var manager = FateManager.Instance();
         if (manager == null)
@@ -649,7 +413,7 @@ public sealed class MainWindow : Window, IDisposable
         // snapshot live CEs by name - the shard encounters live here, not in FateManager
         var liveCe = new Dictionary<string, (string Label, Vector4 Colour, uint SecondsLeft)>(
             StringComparer.OrdinalIgnoreCase);
-        var ceContainer = DynamicEventContainer.GetInstance();
+        var ceContainer = FieldEvents.Container();
         if (ceContainer != null)
         {
             var events = ceContainer->Events;
@@ -754,18 +518,18 @@ public sealed class MainWindow : Window, IDisposable
 
     private unsafe void DrawFates()
     {
-        var inOccult = this.plugin.RecordService.InOccultCrescent();
+        var inFieldOp = FieldZones.Current != FieldZone.None;
         var manager = FateManager.Instance();
-        if (!inOccult || manager == null)
+        if (!inFieldOp || manager == null)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-            ImGui.TextWrapped("Enter the Occult Crescent to track FATEs.");
+            ImGui.TextWrapped("Enter a field op to track FATEs.");
             ImGui.PopStyleColor();
             return;
         }
 
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-        ImGui.TextWrapped("Live FATEs in this zone, then the known North Horn roster (listed even before they spawn). Watched FATEs (bell) pop a toast + chat alert with sound when they go up. Right-click any FATE to add or remove it from the watch-list.");
+        ImGui.TextWrapped("Live FATEs in this zone, then ones seen earlier this session (and, in the Occult Crescent, the known roster). Watched FATEs (bell) pop a toast + chat alert with sound when they go up. Right-click any FATE to add or remove it from the watch-list.");
         ImGui.PopStyleColor();
 
         var alerts = this.plugin.Config.FateAlertsEnabled;
@@ -1359,7 +1123,7 @@ public sealed class MainWindow : Window, IDisposable
                 {
                     this.scanTerm = s.Enemy;
                     this.mapSelection = OccultMap.NorthHorn;
-                    this.selectMapTab = true;
+                    this.page = Page.Map;
                 }
                 ImGui.PopStyleColor();
                 if (ImGui.IsItemHovered())
@@ -1874,7 +1638,7 @@ public sealed class MainWindow : Window, IDisposable
                     {
                         this.highlightRecordId = recId;
                         this.mapSelection = src.Map;
-                        this.selectMapTab = true;
+                        this.page = Page.Map;
                     }
                     if (!has && ImGui.IsItemHovered())
                         ImGui.SetTooltip("Show on map");
@@ -2162,7 +1926,7 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
-        var container = DynamicEventContainer.GetInstance();
+        var container = FieldEvents.Container();
         if (container is null)
         {
             drawList.PopClipRect();

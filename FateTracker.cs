@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using FFXIVClientStructs.FFXIV.Client.Game.Fate;
-using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 
 namespace Mercury;
 
@@ -69,9 +68,9 @@ public sealed class FateTracker
 
     public unsafe void Update()
     {
-        // Only meaningful inside the Occult Crescent; elsewhere FateManager is full of
+        // Only meaningful inside a field op; elsewhere FateManager is full of
         // unrelated overworld FATEs, so forget this session's timers when we leave.
-        if (PublicContentOccultCrescent.GetInstance() == null)
+        if (FieldZones.Current == FieldZone.None)
         {
             this.lastActiveUnix.Clear();
             this.currentlyActive.Clear();

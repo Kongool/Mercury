@@ -28,10 +28,16 @@ public sealed class Configuration : IPluginConfiguration
     public HashSet<string> AlertFates { get; set; } =
         new(StringComparer.OrdinalIgnoreCase) { "Dark Artistry", "Appalling Behavior" };
 
-    /// <summary>Automatically open the window when entering the Occult Crescent, close it when leaving.</summary>
-    public bool AutoOpenInOccult { get; set; } = true;
+    /// <summary>Show every field op's collection and story pages in the sidebar, not just the current zone's.</summary>
+    public bool ShowAllZones { get; set; } = false;
 
-    /// <summary>Show the slim "Mercury" tab on the screen edge (shares the edges with the Daedalus / Charon tabs).</summary>
+    /// <summary>Last-seen field-op levels per character, keyed by content id.</summary>
+    public Dictionary<ulong, CharacterProgress> Progress { get; set; } = new();
+
+    /// <summary>
+    /// Show the slim "Mercury" tab on the screen edge (shares the edges with the Daedalus / Charon tabs). The
+    /// tab is Mercury's only UI; off hides Mercury until /mercury turns it back on.
+    /// </summary>
     public bool EdgeDockEnabled { get; set; } = true;
 
     /// <summary>Which screen edge the Mercury tab is pinned to. Dragging the tab changes it.</summary>

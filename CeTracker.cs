@@ -59,7 +59,7 @@ public sealed class CeTracker
 
     public unsafe void Update()
     {
-        var container = DynamicEventContainer.GetInstance();
+        var container = FieldEvents.Container();
         if (container is null)
         {
             // left the Occult Crescent instance - forget this session's timers
