@@ -43,6 +43,12 @@ dotnet build -c Release
 
 The built `Mercury.dll` (plus its generated `Mercury.json` manifest) lands in `bin/Release/`.
 
+## Installing
+
+1. In-game, open Dalamud settings (`/xlsettings`) → **Experimental** → **Custom Plugin Repositories**.
+2. Add `https://raw.githubusercontent.com/Kongool/Mercury/main/repo.json`, tick **Enabled**, and save.
+3. Open the plugin installer (`/xlplugins`), search for **Mercury**, and install it.
+
 ## Installing for testing (dev plugin)
 
 1. Build in `Release`.
