@@ -7,7 +7,7 @@ A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for **FINAL FANTASY XIV*
 - **Lives in an edge tab.** A slim "Mercury" tab sits on the screen edge, alongside the Daedalus and Charon tabs. Point at it to slide Mercury out, and click it to keep it out. Drag it to any edge. There is no separate window and nothing pops up on its own.
 - **Shows only the zone you're in.** The sidebar lists the pages for your current zone, plus **Progress** and **Settings**. A setting lists every zone's pages instead.
 - **Progress page:** your Elemental Level, Resistance Rank and Knowledge Level (remembered from the last time you were in each zone), which areas you've unlocked, and the next quest in each chain.
-- **Eureka:** Elemental Level and EXP, weather forecast, elemental wheel, live notorious monsters, and the four zone-unlock quests.
+- **Eureka:** Elemental Level and EXP, weather forecast, elemental wheel, live notorious monsters, the four zone-unlock quests, and the 10 weekly Eureka Challenge Log entries.
 - **Bozja / Zadnor:** Resistance Rank and Mettle, live Critical Engagements and skirmishes, weather forecast, and the Save the Queen story chain with the rank each step needs.
 - **Occult Crescent:**
   - Lists **every Occult Record** in the game (loaded from the game's `MKDLore` data), each with its icon, split into **Missing** and **Acquired**, plus a collected-progress bar.

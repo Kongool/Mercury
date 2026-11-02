@@ -105,7 +105,7 @@ public sealed class Plugin : IDalamudPlugin
         => this.AlertEncounter(name, "CE up", alertAny: false);
 
     // A completed CE / FATE nudges the matching Challenge Log count live, between window syncs.
-    // The log is Occult Crescent only, so Eureka / Bozja completions don't count.
+    // Those challenges are Occult Crescent only, so Eureka / Bozja completions don't count.
     private void OnCeCompleted(string name)
     {
         if (this.RecordService.InOccultCrescent())

@@ -16,6 +16,12 @@ public sealed record ChallengeEntry(
     byte MenuOrder)
 {
     /// <summary>
+    /// Which field op the entry belongs to. Only the Occult Crescent entries reward Knowledge EXP
+    /// (type 12); the rest of the category is Eureka. Bozja has no Challenge Log entries.
+    /// </summary>
+    public FieldOp Op => this.Reward0Type == 12 ? FieldOp.Occult : FieldOp.Eureka;
+
+    /// <summary>
     /// Human-readable reward, resolved from the ContentsNote reward-type codes. The Occult
     /// Crescent Field Ops entries reward Knowledge EXP (type 12) + Phantom EXP (type 13,
     /// amount in the "gil" field), not gil; Eureka entries reward EXP + gil.
@@ -64,6 +70,9 @@ public sealed class ChallengeLog
 
     /// <summary>The Field Operations entries, in the game's menu order.</summary>
     public IReadOnlyList<ChallengeEntry> Entries => this.entries;
+
+    /// <summary>The entries for one field op, in menu order.</summary>
+    public IReadOnlyList<ChallengeEntry> For(FieldOp op) => this.entries.FindAll(e => e.Op == op);
 
     public ChallengeLog()
     {

@@ -917,23 +917,28 @@ public sealed partial class MainWindow : Window, IDisposable
 
     // ---- Field Operations Challenge Log ----
 
-    private void DrawChallengeLog()
+    private int ChallengesDone(IReadOnlyList<ChallengeEntry> entries)
+    {
+        var done = 0;
+        foreach (var e in entries)
+            if (this.plugin.RecordService.IsChallengeComplete(e.RowId))
+                done++;
+        return done;
+    }
+
+    private void DrawChallengeLog(FieldOp op)
     {
         var log = this.plugin.ChallengeLog;
-        var entries = log.Entries;
+        var entries = log.For(op);
         if (entries.Count == 0)
         {
             ImGui.TextDisabled("Challenge Log data unavailable.");
             return;
         }
 
-        var done = 0;
-        foreach (var e in entries)
-            if (this.plugin.RecordService.IsChallengeComplete(e.RowId))
-                done++;
-
+        var done = this.ChallengesDone(entries);
         var frac = (float)done / entries.Count;
-        ImGui.Text($"{log.CategoryName}  {done} / {entries.Count}");
+        ImGui.Text($"{(op == FieldOp.Eureka ? "Eureka" : "Occult Crescent")}  {done} / {entries.Count}");
         ImGui.ProgressBar(frac, new Vector2(-1, 0), $"{frac * 100f:0}%");
 
         // weekly reset countdown, once the game has told us when it is
@@ -951,7 +956,9 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-        ImGui.TextWrapped("Weekly Field Operations challenges (Occult Crescent, then Eureka). Completion is read live and resets each week. Running counts come from the in-game Challenge Log: open it once to the Field Operations tab to sync (Mercury then remembers them). The CE and FATE challenges also advance live as you complete encounters - reopen the log any time to correct the estimate.");
+        ImGui.TextWrapped(op == FieldOp.Eureka
+            ? "Weekly Eureka challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: open it to the Field Operations tab to sync (Mercury then remembers them). Kills don't advance the counts live, so reopen the log to update them."
+            : "Weekly Occult Crescent challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: open it once to the Field Operations tab to sync (Mercury then remembers them). The CE and FATE challenges also advance live as you complete encounters - reopen the log any time to correct the estimate.");
         ImGui.PopStyleColor();
 
         // live count scraped from the open in-game window, keyed by row id (cached after close)

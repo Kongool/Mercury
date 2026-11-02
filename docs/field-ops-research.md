@@ -19,7 +19,8 @@ UI mockup (private, share it from its Share menu): https://claude.ai/artifact/XN
 
 Built:
 - Occult Crescent pages, moved into the sidebar (unchanged otherwise).
-- Eureka (Anemos, Pagos, Pyros, Hydatos): overview, notorious monsters, weather forecast, story & unlocks.
+- Eureka (Anemos, Pagos, Pyros, Hydatos): overview, notorious monsters, weather forecast, story & unlocks,
+  Challenge Log.
 - Bozjan Southern Front and Zadnor: overview, Critical Engagements, skirmishes, weather, story & unlocks.
 - Progress page: last-seen levels per character, unlock status, and the next quest in each chain.
 - Settings page.
@@ -93,6 +94,10 @@ Local FFXIVClientStructs at the time: 7.57.0.9414 (commit dd57986b, 2026-10-20).
   - Hydatos: Fair 12, then Showers / Gloom / Thunderstorms / Snow at 22 each
 - **Baldesion Arsenal:** Hydatos story + Elemental Lv 60. Portals open after the NM FATE "I Don't Want to
   Believe" (Umbral Turbulence weather, which is server-driven), inside Hydatos.
+- **Challenge Log:** `ContentsNote` rows 56–65 ("Forbidden ..."), in the Field Operations category (13)
+  alongside the Occult Crescent rows 76–83. Mercury tells them apart by reward: only Occult entries give
+  Knowledge EXP (type 12). Counts sync from the open in-game window; nothing advances them live.
+  Bozja has no Challenge Log entries.
 - **Other sheets:** `EurekaMagiciteItem`, `EurekaMagiaAction`, `EurekaAetherItem`, `EurekaAethernet`,
   `EurekaGrowData`.
 

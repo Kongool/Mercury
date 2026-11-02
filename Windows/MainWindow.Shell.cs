@@ -26,6 +26,7 @@ public sealed partial class MainWindow
         Records,
         Quests,
         ChallengeLog,
+        EurekaLog,
         PhantomBlu,
         Martial,
         EurekaStory,
@@ -161,11 +162,8 @@ public sealed partial class MainWindow
             foreach (var q in quests)
                 if (this.plugin.RecordService.IsQuestComplete(q.RowId))
                     questsDone++;
-            var log = this.plugin.ChallengeLog.Entries;
-            var logDone = 0;
-            foreach (var e in log)
-                if (this.plugin.RecordService.IsChallengeComplete(e.RowId))
-                    logDone++;
+            var log = this.plugin.ChallengeLog.For(FieldOp.Occult);
+            var logDone = this.ChallengesDone(log);
             var blu = 0;
             foreach (var s in PhantomBlueMage.Spells)
                 if (this.plugin.Config.LearnedBlueSpells.Contains(s.Name))
@@ -188,9 +186,11 @@ public sealed partial class MainWindow
 
         if (op == FieldOp.Eureka || all)
         {
+            var log = this.plugin.ChallengeLog.For(FieldOp.Eureka);
             this.nav.Add(new NavGroup("EUREKA", false, new List<NavItem>
             {
                 new(Page.EurekaStory, "Story & Unlocks", FontAwesomeIcon.Scroll, $"{QuestChains.DoneCount(QuestChains.Eureka)}/{QuestChains.Eureka.Count}"),
+                new(Page.EurekaLog, "Challenge Log", FontAwesomeIcon.ClipboardList, log.Count > 0 ? $"{this.ChallengesDone(log)}/{log.Count}" : null),
             }));
         }
 
@@ -382,7 +382,13 @@ public sealed partial class MainWindow
             case Page.ChallengeLog:
                 MercuryTheme.PageHeader("Field Ops Challenge Log", "This week's Occult Crescent entries");
                 this.DrawSearchBox("Search entries...");
-                this.DrawChallengeLog();
+                this.DrawChallengeLog(FieldOp.Occult);
+                break;
+
+            case Page.EurekaLog:
+                MercuryTheme.PageHeader("Eureka Challenge Log", "This week's Eureka entries");
+                this.DrawSearchBox("Search entries...");
+                this.DrawChallengeLog(FieldOp.Eureka);
                 break;
 
             case Page.PhantomBlu:
