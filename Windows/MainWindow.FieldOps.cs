@@ -238,7 +238,9 @@ public sealed partial class MainWindow
         var scale = ImGuiHelpers.GlobalScale;
         ImGui.TableSetupColumn("Op", ImGuiTableColumnFlags.WidthFixed, 110f * scale);
         ImGui.TableSetupColumn("Quest", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("Needs", ImGuiTableColumnFlags.WidthFixed, 150f * scale);
+        // Wide enough for the longest "Needs" text, e.g. "Elemental Lv 60 · you're 59".
+        var needsWidth = Math.Max(150f * scale, ImGui.CalcTextSize("Elemental Lv 60 · you're 59").X + (12f * scale));
+        ImGui.TableSetupColumn("Needs", ImGuiTableColumnFlags.WidthFixed, needsWidth);
 
         NextRow("SAVE THE QUEEN", QuestChains.Next(QuestChains.Bozja), p.ResistanceRank, "Rank");
         NextRow("EUREKA", QuestChains.Next(QuestChains.Eureka), p.ElementalLevel, "Elemental Lv");
@@ -287,7 +289,7 @@ public sealed partial class MainWindow
             }
 
             MercuryTheme.Text(QuestChains.Name(step.QuestId), MercuryTheme.TextPrimary);
-            MercuryTheme.Text(step.Unlocks.Length > 0 ? $"{step.Where} · unlocks {step.Unlocks}" : step.Where, MercuryTheme.TextDim);
+            MercuryTheme.TextWrapped(step.Unlocks.Length > 0 ? $"{step.Where} · unlocks {step.Unlocks}" : step.Where, MercuryTheme.TextDim);
             ImGui.TableNextColumn();
             if (step.MinLevel <= 0)
                 MercuryTheme.Text("Ready now", MercuryTheme.Green);
@@ -302,28 +304,50 @@ public sealed partial class MainWindow
     {
         MercuryTheme.SectionLabel(title);
         MercuryTheme.TextScaled(big, MercuryTheme.TextPrimary, 1.3f);
-        MercuryTheme.Text(caption, MercuryTheme.TextDim);
+        MercuryTheme.TextWrapped(caption, MercuryTheme.TextDim);
         MercuryTheme.Bar(fraction, ImGui.GetContentRegionAvail().X);
-        MercuryTheme.Text(seen, MercuryTheme.TextDim);
+        MercuryTheme.TextWrapped(seen, MercuryTheme.TextDim);
         MercuryTheme.VSpace(4f);
     }
 
+    // The status sits at the right edge of the name line. In a narrow column it moves to the detail
+    // line, or to a line of its own, instead of running past the edge.
     private static void StatusRow(string name, string detail, string status, Vector4 color)
     {
+        var indent = 16f * ImGuiHelpers.GlobalScale;
         MercuryTheme.Text("●", color);
         ImGui.SameLine();
         MercuryTheme.Text(name, MercuryTheme.TextPrimary);
-        ImGui.SameLine();
-        var w = ImGui.CalcTextSize(status).X;
-        var right = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - w;
-        ImGui.SetCursorPosX(Math.Max(ImGui.GetCursorPosX(), right));
-        MercuryTheme.Text(status, color);
+        var placed = TryRightAlign(status, color);
+
+        ImGui.Indent(indent);
         if (detail.Length > 0)
         {
-            ImGui.Indent(16f * ImGuiHelpers.GlobalScale);
             MercuryTheme.Text(detail, MercuryTheme.TextDim);
-            ImGui.Unindent(16f * ImGuiHelpers.GlobalScale);
+            placed = placed || TryRightAlign(status, color);
         }
+
+        if (!placed)
+            MercuryTheme.Text(status, color);
+        ImGui.Unindent(indent);
+    }
+
+    // Draws text at the right edge of the current line if it fits there; otherwise moves to a new line
+    // and returns false.
+    private static bool TryRightAlign(string text, Vector4 color)
+    {
+        ImGui.SameLine();
+        var w = ImGui.CalcTextSize(text).X;
+        var avail = ImGui.GetContentRegionAvail().X;
+        if (avail < w + (8f * ImGuiHelpers.GlobalScale))
+        {
+            ImGui.NewLine();
+            return false;
+        }
+
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + avail - w);
+        MercuryTheme.Text(text, color);
+        return true;
     }
 
     private void DrawEurekaCard(CharacterProgress p)
