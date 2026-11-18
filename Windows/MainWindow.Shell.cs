@@ -404,7 +404,8 @@ public sealed partial class MainWindow
 
             case Page.EurekaStory:
                 this.DrawChainPage("Eureka story & unlocks", QuestChains.Eureka, this.plugin.Progress.Current.ElementalLevel, "Elemental Lv",
-                    "These are the four zone-unlock quests. The story steps with Krile inside each zone aren't real quests, so Mercury can't track them.");
+                    "The four zone-unlock quests, then Krile's story steps inside each zone.", scroll: false);
+                this.DrawEurekaStorySteps(zone);
                 break;
 
             case Page.BozjaStory:
@@ -565,6 +566,16 @@ public sealed partial class MainWindow
             if (g.Toggle("Show record descriptions inline", "May contain lore spoilers. Off: hover a record to read it.", ref desc))
             {
                 cfg.ShowDescriptions = desc;
+                cfg.Save();
+            }
+        }
+
+        using (var g = SettingsGroup.Begin("Eureka story"))
+        {
+            var flags = cfg.EurekaStoryFlags;
+            if (g.Toggle("Flag the next story step on the map", "In Eureka, once your Elemental Level reaches the next Krile step, Mercury puts the map flag on it and posts a map link in chat.", ref flags))
+            {
+                cfg.EurekaStoryFlags = flags;
                 cfg.Save();
             }
         }

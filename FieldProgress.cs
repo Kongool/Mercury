@@ -16,6 +16,9 @@ public sealed class CharacterProgress
     public uint ElementalTerritory { get; set; }
     public long ElementalSeenUnix { get; set; }
 
+    /// <summary>The last Eureka story step the player ticked as done (an <see cref="EurekaStory"/> step id, 0 = none).</summary>
+    public int EurekaStoryDone { get; set; }
+
     public int ResistanceRank { get; set; }
     public float MettleFraction { get; set; }
     public uint BozjaTerritory { get; set; }
@@ -78,6 +81,8 @@ public sealed class FieldProgress
 
         var zone = FieldZones.Current;
         var op = FieldZones.OpOf(zone);
+        if (op != FieldOp.Eureka)
+            EurekaStory.ForgetFlag();
         if (op == FieldOp.None)
             return;
 
@@ -138,8 +143,36 @@ public sealed class FieldProgress
             }
         }
 
+        // Using a story object ticks its step (and the ones before it) for this character.
+        if (op == FieldOp.Eureka && EurekaStory.StepFromEvent(p) is var step && step > EurekaStory.DoneThrough(p))
+        {
+            p.EurekaStoryDone = step;
+            changed = true;
+            Service.ChatGui.Print($"[Mercury] Eureka story: step {step} of 22 ticked done.");
+        }
+
         // The "seen" time updates every poll but only matters to the minute, so save on real changes only.
         if (changed)
             this.config.Save();
+
+        if (op == FieldOp.Eureka && this.config.EurekaStoryFlags)
+            EurekaStory.AutoFlag(zone, p);
+    }
+
+    /// <summary>Records the last Eureka story step done for the logged-in character (0 = none).</summary>
+    public unsafe void SetEurekaStoryDone(int stepId)
+    {
+        var ps = PlayerState.Instance();
+        if (ps == null || ps->ContentId == 0)
+            return;
+
+        if (!this.config.Progress.TryGetValue(ps->ContentId, out var p))
+        {
+            p = new CharacterProgress();
+            this.config.Progress[ps->ContentId] = p;
+        }
+
+        p.EurekaStoryDone = stepId;
+        this.config.Save();
     }
 }

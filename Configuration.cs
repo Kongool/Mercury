@@ -31,6 +31,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Show every field op's collection and story pages in the sidebar, not just the current zone's.</summary>
     public bool ShowAllZones { get; set; } = false;
 
+    /// <summary>In Eureka, flag the next story step on the map (and post a chat link) once your level reaches it.</summary>
+    public bool EurekaStoryFlags { get; set; } = true;
+
     /// <summary>Last-seen field-op levels per character, keyed by content id.</summary>
     public Dictionary<ulong, CharacterProgress> Progress { get; set; } = new();
 

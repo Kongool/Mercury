@@ -39,8 +39,26 @@ internal static class SidebarTab
         using (ImRaii.PushColor(ImGuiCol.Text, selected ? accent : MercuryTheme.TextDim))
             ImGui.TextUnformatted(iconStr);
 
+        // The badge sits on the right; shorten the label with an ellipsis rather than draw under it.
+        var labelX = origin.X + padX + iconColumn + 9f * scale;
+        var labelRoom = end.X - labelX - 6f * scale;
+        if (!string.IsNullOrEmpty(badge))
+        {
+            ImGui.SetWindowFontScale(0.78f);
+            labelRoom -= ImGui.CalcTextSize(badge).X + 16f * scale;
+            ImGui.SetWindowFontScale(1f);
+        }
+
+        if (ImGui.CalcTextSize(label).X > labelRoom)
+        {
+            var cut = label.Length;
+            while (cut > 1 && ImGui.CalcTextSize(label[..cut] + "…").X > labelRoom)
+                cut--;
+            label = label[..cut].TrimEnd() + "…";
+        }
+
         var labelSize = ImGui.CalcTextSize(label);
-        ImGui.SetCursorScreenPos(new Vector2(origin.X + padX + iconColumn + 9f * scale, origin.Y + (height - labelSize.Y) * 0.5f));
+        ImGui.SetCursorScreenPos(new Vector2(labelX, origin.Y + (height - labelSize.Y) * 0.5f));
         using (ImRaii.PushColor(ImGuiCol.Text, selected ? MercuryTheme.TextPrimary : MercuryTheme.TextSecondary))
             ImGui.TextUnformatted(label);
 

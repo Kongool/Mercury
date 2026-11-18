@@ -78,8 +78,18 @@ Local FFXIVClientStructs at the time: 7.57.0.9414 (commit dd57986b, 2026-10-20).
   | 68148 | And We Shall Call It Pyros | Elemental Lv 35 + Pagos story | Rodney | Pyros |
   | 68149 | And We Shall Call It Hydatos | Elemental Lv 50 + Pyros story | Rodney | Hydatos |
 
-- **The story steps with Krile inside each zone aren't quests** (they're `CtsErkEureka*` event sheets), and
-  no ClientStructs field for them was found, so Mercury can't track them.
+- **The story steps with Krile inside each zone aren't quests** (they're `CtsErkEureka*` event sheets). The
+  game tracks them as one counter (`EurekaStoryProgress`, rows 0–91, each pointing to the next) with no
+  names or levels, and no ClientStructs field for it was found (`PublicContentEureka.Unk1380`/`Unk1382` are
+  chat-message flags, not progress). Diffing memory around a story cutscene is the next thing to try.
+  So `EurekaStory.cs` hardcodes the 22 steps from the wiki zone pages, with Krile/Gerolt spots from the
+  Level sheet. Each step's confluence (or stream, scrap, pooled aether, tomes) is an EObj whose `Data` is a
+  CustomTalk `CtsErkEureka*` handler, e.g. 2009416–2009418 Anemos, 2009550/2009551/2009566/2009553 Pagos,
+  2009619–2009621/2009626/2009627 Pyros, 2009686–2009689 Hydatos; their Level-sheet spots are the flag spots.
+  Using one during an event (target, or within 5 yalms, at the step's level) ticks that step. The player ticks
+  the backlog; a zone counts as done once the next zone's unlock quest is
+  complete or its achievement is (Making the Most of Anemos 2045, Pagos 2097, Pyros 2159, Hydatos 2231,
+  Really Making the Most of Hydatos 2242; achievements only read after the Achievements window opens).
 - **Zone detection:** TerritoryType in {732, 763, 795, 827}, or
   `EventFramework.GetPublicContentDirectorByType(PublicContentDirectorType.Eureka)`.
 - **Live state:** `PublicContentEureka.GetState()` returns `EurekaState`: `CurrentExperience`,

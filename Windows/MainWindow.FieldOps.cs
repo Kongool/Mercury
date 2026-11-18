@@ -160,7 +160,7 @@ public sealed partial class MainWindow
         ImGui.EndTable();
     }
 
-    private void DrawChainPage(string title, IReadOnlyList<ChainStep> chain, int level, string levelLabel, string note)
+    private void DrawChainPage(string title, IReadOnlyList<ChainStep> chain, int level, string levelLabel, string note, bool scroll = true)
     {
         var done = QuestChains.DoneCount(chain);
         MercuryTheme.PageHeader(title, level > 0 ? $"{done} of {chain.Count} done · {levelLabel} {level}" : $"{done} of {chain.Count} done");
@@ -168,14 +168,14 @@ public sealed partial class MainWindow
         ImGui.Spacing();
 
         var next = QuestChains.Next(chain);
-        if (!ImGui.BeginTable("##chain", 4, ListTable | ImGuiTableFlags.ScrollY))
+        if (!ImGui.BeginTable("##chain", 4, scroll ? ListTable | ImGuiTableFlags.ScrollY : ListTable))
             return;
 
         var scale = ImGuiHelpers.GlobalScale;
         ImGui.TableSetupScrollFreeze(0, 1);
         ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 22f * scale);
         ImGui.TableSetupColumn("Quest", ImGuiTableColumnFlags.WidthStretch, 1.2f);
-        ImGui.TableSetupColumn("Needs", ImGuiTableColumnFlags.WidthFixed, 90f * scale);
+        ImGui.TableSetupColumn("Needs", ImGuiTableColumnFlags.WidthFixed, Math.Max(90f * scale, ImGui.CalcTextSize($"{levelLabel} 88").X + 12f * scale));
         ImGui.TableSetupColumn("Where / unlocks", ImGuiTableColumnFlags.WidthStretch, 1.6f);
         ImGui.TableHeadersRow();
 
@@ -213,6 +213,92 @@ public sealed partial class MainWindow
         }
 
         ImGui.EndTable();
+    }
+
+    // Krile's story steps inside each Eureka zone, one collapsible table per zone. The zone you're in (or the
+    // one with your next step) starts open.
+    private void DrawEurekaStorySteps(FieldZone here)
+    {
+        var p = this.plugin.Progress.Current;
+        var lv = p.ElementalLevel;
+        var proven = EurekaStory.ProvenThrough();
+        var doneThrough = EurekaStory.DoneThrough(p);
+        var next = EurekaStory.Next(p);
+        var scale = ImGuiHelpers.GlobalScale;
+
+        MercuryTheme.SectionHeader("Story steps with Krile");
+        MercuryTheme.TextWrapped("Not in the journal and no map markers. Using a step's confluence or other story object ticks it for this character. To catch up a character, tick the last step it has done (ask Krile if unsure); that ticks the steps before it too. A whole zone ticks itself once you've unlocked the next zone or have its \"Making the Most of\" achievement. The flag button puts the game's map flag on the spot.", MercuryTheme.TextDim);
+        if (!EurekaStory.AchievementsLoaded())
+            MercuryTheme.TextWrapped("Open the in-game Achievements window once this session so Mercury can see the Hydatos story achievements.", MercuryTheme.Amber);
+        ImGui.Spacing();
+
+        foreach (var zone in FieldZones.EurekaZones)
+        {
+            var total = 0;
+            var done = 0;
+            foreach (var s in EurekaStory.Steps)
+            {
+                if (s.Zone != zone)
+                    continue;
+                total++;
+                if (s.Id <= doneThrough)
+                    done++;
+            }
+
+            var startOpen = zone == here || (FieldZones.OpOf(here) != FieldOp.Eureka && next?.Zone == zone);
+            ImGui.SetNextItemOpen(startOpen, ImGuiCond.Once);
+            if (!ImGui.CollapsingHeader($"{FieldZones.DisplayName(zone)}  ·  {done}/{total}###story{zone}"))
+                continue;
+
+            var krile = EurekaStory.Krile(zone);
+            MercuryTheme.Text($"Krile is at base camp ({krile.X:0.0}, {krile.Y:0.0}).", MercuryTheme.TextDim);
+
+            if (!ImGui.BeginTable($"##storySteps{zone}", 4, ListTable))
+                continue;
+
+            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 24f * scale);
+            ImGui.TableSetupColumn("Needs", ImGuiTableColumnFlags.WidthFixed, 70f * scale);
+            ImGui.TableSetupColumn("What to do", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 30f * scale);
+
+            foreach (var s in EurekaStory.Steps)
+            {
+                if (s.Zone != zone)
+                    continue;
+
+                var isDone = s.Id <= doneThrough;
+                var isNext = ReferenceEquals(s, next);
+                ImGui.TableNextRow();
+
+                // Done tick. Steps the game already proves can't be unticked.
+                ImGui.TableNextColumn();
+                using (ImRaii.Disabled(s.Id <= proven))
+                {
+                    var tick = isDone;
+                    if (ImGui.Checkbox($"##storyDone{s.Id}", ref tick))
+                        this.plugin.Progress.SetEurekaStoryDone(tick ? s.Id : s.Id - 1);
+                }
+
+                ImGui.TableNextColumn();
+                MercuryTheme.Text($"Lv {s.Level}", isDone ? MercuryTheme.TextDim : lv >= s.Level ? MercuryTheme.Green : MercuryTheme.Amber);
+
+                ImGui.TableNextColumn();
+                MercuryTheme.TextWrapped(s.Todo, isNext ? MercuryTheme.Accent : isDone ? MercuryTheme.TextDim : MercuryTheme.TextPrimary);
+                if (s.Unlocks.Length > 0)
+                    MercuryTheme.Text($"Unlocks {s.Unlocks}", isDone ? MercuryTheme.TextMuted : MercuryTheme.TextSecondary);
+
+                ImGui.TableNextColumn();
+                var mark = s.Flag ?? krile;
+                bool clicked;
+                using (ImRaii.PushFont(UiBuilder.IconFont))
+                    clicked = ImGui.SmallButton($"{FontAwesomeIcon.MapMarkerAlt.ToIconString()}##storyFlag{s.Id}");
+                MercuryTheme.Tooltip($"Flag {mark.Name} ({mark.X:0.0}, {mark.Y:0.0}) on the map");
+                if (clicked)
+                    EurekaStory.Flag(s, openMap: true, announce: false);
+            }
+
+            ImGui.EndTable();
+        }
     }
 
     private void DrawProgressPage(HashSet<uint> collected)
