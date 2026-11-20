@@ -9,6 +9,16 @@ namespace Mercury.Windows.Components;
 /// <summary>Full-width sidebar entry: icon + label, accent bar on the left when selected, optional badge on the right. Ported from Hephaestus.</summary>
 internal static class SidebarTab
 {
+    /// <summary>Width a tab needs to show its label in full beside a typical badge ("1 JOIN", "54/60").</summary>
+    public static float WidthFor(string label)
+    {
+        var scale = ImGuiHelpers.GlobalScale;
+        ImGui.SetWindowFontScale(0.78f);
+        var badge = ImGui.CalcTextSize("1 JOIN").X + 16f * scale;
+        ImGui.SetWindowFontScale(1f);
+        return (11f + 16f + 9f + 6f) * scale + ImGui.CalcTextSize(label).X + badge;
+    }
+
     public static bool Draw(string label, FontAwesomeIcon icon, bool selected, string? badge = null, Vector4? badgeColor = null)
     {
         var scale = ImGuiHelpers.GlobalScale;

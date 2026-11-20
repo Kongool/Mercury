@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using ContentsNote = FFXIVClientStructs.FFXIV.Client.Game.UI.ContentsNote;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace Mercury;
@@ -46,6 +49,18 @@ public sealed class ChallengeLogScraper
     /// <summary>When the counts were last captured from the open window, or null if never.</summary>
     public DateTime? LastSyncUtc { get; private set; }
 
+    // A Sync in progress: when it opened the log, whether Mercury opened it (so only then closes it),
+    // and when the game finished sending the counts.
+    private DateTime? syncStartedUtc;
+    private bool syncOpenedWindow;
+    private DateTime? syncLoadedUtc;
+
+    /// <summary>True while <see cref="Sync"/> has the Challenge Log open.</summary>
+    public bool Syncing => this.syncStartedUtc != null;
+
+    /// <summary>Why the last Sync didn't get the counts, or null if it worked (or none ran).</summary>
+    public string? SyncProblem { get; private set; }
+
     public ChallengeLogScraper(ChallengeLog data, Configuration config)
     {
         this.order = data.Entries; // already sorted by menu order, matching the addon's blocks
@@ -77,7 +92,7 @@ public sealed class ChallengeLogScraper
     /// <paramref name="nextResetUnix"/> is the game's next weekly reset time, used to discard
     /// persisted counts once the week rolls over.
     /// </summary>
-    public void Update(long? nextResetUnix)
+    public unsafe void Update(long? nextResetUnix)
     {
         this.lastResetUnix = nextResetUnix ?? this.lastResetUnix;
 
@@ -93,7 +108,86 @@ public sealed class ChallengeLogScraper
             this.config.Save();
         }
 
+        // While syncing, wait for the game to send the counts before reading, so zeros aren't saved.
+        if (this.syncStartedUtc is { } started)
+        {
+            var now = DateTime.UtcNow;
+            if (this.syncLoadedUtc == null && NoteLoaded())
+                this.syncLoadedUtc = now;
+            if (this.syncLoadedUtc is { } loaded && now - loaded >= TimeSpan.FromMilliseconds(300))
+                this.RefreshFromWindow(nextResetUnix);
+
+            if (this.LastSyncUtc is { } synced && this.syncLoadedUtc is { } l && synced > l.AddMilliseconds(300))
+                this.EndSync(null);
+            else if (now - started > TimeSpan.FromSeconds(5))
+                this.EndSync(this.syncLoadedUtc == null ? "The game didn't send the Challenge Log counts. Try again in a moment."
+                    : this.FindWindow() == null ? "The Challenge Log didn't open."
+                    : "The Challenge Log opened on another tab. Switch it to Field Operations once (the game remembers the tab), then Sync again.");
+            return;
+        }
+
         this.RefreshFromWindow(nextResetUnix);
+    }
+
+    /// <summary>
+    /// Opens the in-game Challenge Log, reads the counts as soon as the game sends them, and closes it again
+    /// (unless it was already open). Takes under a second when it works; see <see cref="SyncProblem"/> if not.
+    /// </summary>
+    public unsafe void Sync()
+    {
+        if (this.Syncing)
+            return;
+
+        var c = Service.Condition;
+        if (c[ConditionFlag.InCombat])
+        {
+            this.SyncProblem = "Can't sync in combat.";
+            return;
+        }
+
+        if (c[ConditionFlag.OccupiedInEvent] || c[ConditionFlag.OccupiedInCutSceneEvent] || c[ConditionFlag.OccupiedInQuestEvent] ||
+            c[ConditionFlag.WatchingCutscene] || c[ConditionFlag.WatchingCutscene78] || c[ConditionFlag.BetweenAreas] || c[ConditionFlag.BetweenAreas51])
+        {
+            this.SyncProblem = "Can't sync during a cutscene, conversation or zone change.";
+            return;
+        }
+
+        var module = AgentModule.Instance();
+        var agent = module == null ? null : module->GetAgentByInternalId(AgentId.ContentsNote);
+        if (agent == null)
+        {
+            this.SyncProblem = "Couldn't reach the Challenge Log.";
+            return;
+        }
+
+        this.syncOpenedWindow = !agent->IsAgentActive();
+        if (this.syncOpenedWindow)
+            agent->Show();
+        this.syncStartedUtc = DateTime.UtcNow;
+        this.syncLoadedUtc = null;
+        this.SyncProblem = null;
+    }
+
+    private unsafe void EndSync(string? problem)
+    {
+        if (this.syncOpenedWindow)
+        {
+            var module = AgentModule.Instance();
+            var agent = module == null ? null : module->GetAgentByInternalId(AgentId.ContentsNote);
+            if (agent != null && agent->IsAgentActive())
+                agent->Hide();
+        }
+
+        this.syncStartedUtc = null;
+        this.syncOpenedWindow = false;
+        this.syncLoadedUtc = null;
+        this.SyncProblem = problem;
+    }
+
+    private static unsafe bool NoteLoaded()
+    {
+        var note = ContentsNote.Instance();
+        return note != null && note->State == ContentsNote.ContentsNoteState.Loaded;
     }
 
     /// <summary>

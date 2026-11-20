@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Interface;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -792,9 +793,11 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         var value = timer.Value;
-        ImGui.TextDisabled($"Instance timer: {FormatTime(value.Remaining)} remaining ({FormatTime(value.Elapsed)} elapsed)");
+        ImGui.TextDisabled(value.HasElapsed
+            ? $"Instance timer: {FormatTime(value.Remaining)} remaining ({FormatTime(value.Elapsed)} elapsed)"
+            : $"Instance timer: {FormatTime(value.Remaining)} remaining");
 
-        if (zone != OccultMap.NorthHorn)
+        if (zone != OccultMap.NorthHorn || !value.HasElapsed)
             return;
 
         const uint firstNorthPotSeconds = 20 * 60;
@@ -957,13 +960,23 @@ public sealed partial class MainWindow : Window, IDisposable
 
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
         ImGui.TextWrapped(op == FieldOp.Eureka
-            ? "Weekly Eureka challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: open it to the Field Operations tab to sync (Mercury then remembers them). Kills don't advance the counts live, so reopen the log to update them."
-            : "Weekly Occult Crescent challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: open it once to the Field Operations tab to sync (Mercury then remembers them). The CE and FATE challenges also advance live as you complete encounters - reopen the log any time to correct the estimate.");
+            ? "Weekly Eureka challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: press Sync (or open it to the Field Operations tab) and Mercury remembers them. Kills don't advance the counts live, so Sync again to update them."
+            : "Weekly Occult Crescent challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: press Sync (or open it to the Field Operations tab) and Mercury remembers them. The CE and FATE challenges also advance live as you complete encounters - Sync any time to correct the estimate.");
         ImGui.PopStyleColor();
 
         // live count scraped from the open in-game window, keyed by row id (cached after close)
         var scraped = this.plugin.ChallengeScraper.TryScrape();
         var lastSync = this.plugin.ChallengeScraper.LastSyncUtc;
+        var scraper = this.plugin.ChallengeScraper;
+        using (ImRaii.Disabled(scraper.Syncing))
+        {
+            if (ImGui.Button(scraper.Syncing ? "Syncing..." : "Sync"))
+                scraper.Sync();
+        }
+
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Opens the in-game Challenge Log for a moment to read the counts, then closes it.");
+        ImGui.SameLine();
         if (lastSync is { } sync)
         {
             var ago = (uint)Math.Max(0, (DateTimeOffset.UtcNow - new DateTimeOffset(sync, TimeSpan.Zero)).TotalSeconds);
@@ -972,7 +985,14 @@ public sealed partial class MainWindow : Window, IDisposable
         else
         {
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.70f, 0.25f, 1f));
-            ImGui.TextUnformatted("Open the in-game Challenge Log (Field Operations tab) to sync counts.");
+            ImGui.TextUnformatted("Counts not synced yet.");
+            ImGui.PopStyleColor();
+        }
+
+        if (scraper.SyncProblem is { } problem)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.70f, 0.25f, 1f));
+            ImGui.TextWrapped(problem);
             ImGui.PopStyleColor();
         }
         ImGui.Spacing();

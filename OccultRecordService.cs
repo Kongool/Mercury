@@ -16,6 +16,9 @@ public sealed record OccultQuest(uint RowId, string Name, bool IsNorthHorn);
 /// <summary>The current public-content timer, in seconds.</summary>
 public readonly record struct OccultInstanceTimer(uint Remaining, uint Maximum)
 {
+    /// <summary>False when the game's instance length couldn't be read, so <see cref="Elapsed"/> means nothing.</summary>
+    public bool HasElapsed => this.Maximum > 0;
+
     public uint Elapsed => this.Maximum > this.Remaining ? this.Maximum - this.Remaining : 0;
 }
 
@@ -138,16 +141,27 @@ public sealed class OccultRecordService
     }
 
     /// <summary>Reads the same remaining/max timer used by the in-game duty display.</summary>
+    private const uint MaxSaneSeconds = 24 * 60 * 60;
+
     public unsafe OccultInstanceTimer? GetInstanceTimer()
     {
         var director = PublicContentOccultCrescent.GetInstance();
         if (director == null)
             return null;
 
-        var maximum = director->GetContentTimeMax();
         var remainingRaw = director->ContentTimeLeft;
         var remaining = (uint)MathF.Max(0f, MathF.Ceiling(remainingRaw));
-        if (maximum == 0 || remaining > maximum)
+
+        // GetContentTimeMax has been seen returning garbage (billions of seconds), which made "elapsed" nonsense.
+        // Fall back to the director's start/end timestamps; if neither is sane, elapsed is unknown (Maximum 0).
+        var maximum = director->GetContentTimeMax();
+        if (maximum < remaining || maximum > MaxSaneSeconds)
+        {
+            var span = director->DirectorEndTimestamp - director->DirectorStartTimestamp;
+            maximum = span >= remaining && span <= MaxSaneSeconds ? (uint)span : 0;
+        }
+
+        if (remaining == 0 && maximum == 0)
             return null;
 
         return new OccultInstanceTimer(remaining, maximum);

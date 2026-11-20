@@ -106,7 +106,7 @@ Local FFXIVClientStructs at the time: 7.57.0.9414 (commit dd57986b, 2026-10-20).
   Believe" (Umbral Turbulence weather, which is server-driven), inside Hydatos.
 - **Challenge Log:** `ContentsNote` rows 56–65 ("Forbidden ..."), in the Field Operations category (13)
   alongside the Occult Crescent rows 76–83. Mercury tells them apart by reward: only Occult entries give
-  Knowledge EXP (type 12). Counts sync from the open in-game window; nothing advances them live.
+  Knowledge EXP (type 12). Counts sync from the open in-game window; nothing advances them live. The counts aren't in memory while it's closed (`ContentsNote` only holds completion bits), so the page's Sync button opens it with `AgentId.ContentsNote` `Show()`, waits for `ContentsNote.State == Loaded`, reads, then `Hide()`s it. It relies on the game reopening the log on the Field Operations tab; not yet checked in game.
   Bozja has no Challenge Log entries.
 - **Other sheets:** `EurekaMagiciteItem`, `EurekaMagiaAction`, `EurekaAetherItem`, `EurekaAethernet`,
   `EurekaGrowData`.

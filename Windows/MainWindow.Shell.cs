@@ -63,7 +63,12 @@ public sealed partial class MainWindow
         this.DrawHeader(zone);
 
         var scale = ImGuiHelpers.GlobalScale;
+        // Wide enough for the longest page name plus a badge, so names aren't cut short (capped so the page keeps room).
         var sidebarW = MercuryTheme.SidebarWidth * scale;
+        foreach (var g in this.nav)
+            foreach (var item in g.Items)
+                sidebarW = Math.Max(sidebarW, SidebarTab.WidthFor(item.Label) + ImGui.GetStyle().ScrollbarSize);
+        sidebarW = Math.Min(sidebarW, 250f * scale);
         using (var side = ImRaii.Child("##mercuryNav", new Vector2(sidebarW, -1), false))
         {
             if (side.Success)
@@ -173,7 +178,7 @@ public sealed partial class MainWindow
             {
                 new(Page.Records, "Records", FontAwesomeIcon.Book, $"{have}/{records.Count}"),
                 new(Page.Quests, "Quests", FontAwesomeIcon.Tasks, $"{questsDone}/{quests.Count}"),
-                new(Page.ChallengeLog, "Field Ops Log", FontAwesomeIcon.ClipboardList, log.Count > 0 ? $"{logDone}/{log.Count}" : null),
+                new(Page.ChallengeLog, "Challenge Log", FontAwesomeIcon.ClipboardList, log.Count > 0 ? $"{logDone}/{log.Count}" : null),
                 new(Page.PhantomBlu, "Phantom BLU", FontAwesomeIcon.Magic, $"{blu}/{PhantomBlueMage.Spells.Count}"),
                 new(Page.Martial, "Martial Memories", FontAwesomeIcon.FistRaised),
             };
@@ -380,7 +385,7 @@ public sealed partial class MainWindow
                 break;
 
             case Page.ChallengeLog:
-                MercuryTheme.PageHeader("Field Ops Challenge Log", "This week's Occult Crescent entries");
+                MercuryTheme.PageHeader("Occult Crescent Challenge Log", "This week's Occult Crescent entries");
                 this.DrawSearchBox("Search entries...");
                 this.DrawChallengeLog(FieldOp.Occult);
                 break;
@@ -526,7 +531,7 @@ public sealed partial class MainWindow
             ("Records", $"{have} / {records.Count}", $"{records.Count - have} missing", records.Count == 0 ? 0f : (float)have / records.Count),
             ("Critical encounters", ceUp == 1 ? "1 active" : $"{ceUp} active", ceJoin > 0 ? $"{ceJoin} open to join now" : "none open to join", null),
             ("FATEs", $"{this.ActiveFateCount()} up", $"{this.plugin.Config.AlertFates.Count} on your watch list", null),
-            ("Instance", timer is { } t ? FormatTime(t.Remaining) : "-", timer is { } t2 ? $"{FormatTime(t2.Elapsed)} elapsed" : "waiting for game data", null));
+            ("Instance", timer is { } t ? FormatTime(t.Remaining) : "-", timer is { HasElapsed: true } t2 ? $"{FormatTime(t2.Elapsed)} elapsed" : timer is null ? "waiting for game data" : "left in this instance", null));
 
         MercuryTheme.VSpace(4f);
         if (zone == FieldZone.NorthHorn)
