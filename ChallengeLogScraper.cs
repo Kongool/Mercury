@@ -39,6 +39,7 @@ public sealed class ChallengeLogScraper
     // Mercury can auto-increment live from its own trackers between window syncs.
     private readonly List<uint> ceChallengeRows = new();
     private readonly List<uint> fateChallengeRows = new();
+    private readonly List<uint> interlopingRows = new();
 
     // Best-known counts, kept so they persist after the window closes (the game only exposes
     // them while it is open). Seeded from persisted config and written back on change.
@@ -74,6 +75,8 @@ public sealed class ChallengeLogScraper
                 this.ceChallengeRows.Add(e.RowId);
             else if (e.Description.Contains("FATEs on the Occult Crescent", StringComparison.OrdinalIgnoreCase))
                 this.fateChallengeRows.Add(e.RowId);
+            else if (e.Description.Contains("monsters with a knowledge level", StringComparison.OrdinalIgnoreCase))
+                this.interlopingRows.Add(e.RowId);
         }
 
         // seed the cache from the last persisted sync so counts show before the window is
@@ -206,6 +209,9 @@ public sealed class ChallengeLogScraper
 
     /// <summary>As <see cref="OnCriticalEncounterCompleted"/>, for the "Fateful Contention" FATE challenges.</summary>
     public void OnFateCompleted() => this.Bump(this.fateChallengeRows);
+
+    /// <summary>As <see cref="OnCriticalEncounterCompleted"/>, for the "Occult Interloping" kill challenges.</summary>
+    public void OnInterlopingKill() => this.Bump(this.interlopingRows);
 
     // Adds one to each given challenge's current count (never past its max), but only for
     // entries we already have a baseline for - so this refines a synced count rather than

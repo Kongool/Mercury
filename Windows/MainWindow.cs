@@ -45,6 +45,13 @@ public sealed partial class MainWindow : Window, IDisposable
     private static string FormatTime(uint seconds)
         => $"{seconds / 60}:{seconds % 60:00}";
 
+    // "45s", "12m", "3h 20m", "2d 4h": for how long ago something happened.
+    private static string FormatAgo(uint seconds)
+        => seconds < 60 ? $"{seconds}s"
+            : seconds < 3600 ? $"{seconds / 60}m"
+            : seconds < 86400 ? $"{seconds / 3600}h {seconds % 3600 / 60}m"
+            : $"{seconds / 86400}d {seconds % 86400 / 3600}h";
+
     private static string FormatWeatherWindow(OccultWeatherWindow window, DateTimeOffset now)
     {
         var start = window.Start.ToLocalTime();
@@ -961,7 +968,7 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
         ImGui.TextWrapped(op == FieldOp.Eureka
             ? "Weekly Eureka challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: press Sync (or open it to the Field Operations tab) and Mercury remembers them. Kills don't advance the counts live, so Sync again to update them."
-            : "Weekly Occult Crescent challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: press Sync (or open it to the Field Operations tab) and Mercury remembers them. The CE and FATE challenges also advance live as you complete encounters - Sync any time to correct the estimate.");
+            : "Weekly Occult Crescent challenges. Completion is read live and resets each week. Running counts come from the in-game Challenge Log: press Sync (or open it to the Field Operations tab) and Mercury remembers them. The CE, FATE and Interloping challenges also advance live as you complete encounters and kill monsters - Sync any time to correct the estimate.");
         ImGui.PopStyleColor();
 
         // live count scraped from the open in-game window, keyed by row id (cached after close)
@@ -980,7 +987,7 @@ public sealed partial class MainWindow : Window, IDisposable
         if (lastSync is { } sync)
         {
             var ago = (uint)Math.Max(0, (DateTimeOffset.UtcNow - new DateTimeOffset(sync, TimeSpan.Zero)).TotalSeconds);
-            ImGui.TextDisabled($"Counts synced {FormatTime(ago)} ago");
+            ImGui.TextDisabled($"Counts synced {FormatAgo(ago)} ago");
         }
         else
         {

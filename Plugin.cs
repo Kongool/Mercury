@@ -1,4 +1,6 @@
 using System;
+using Dalamud.Game.Chat;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Toast;
 using FFXIVClientStructs.FFXIV.Client.UI;
@@ -64,6 +66,7 @@ public sealed class Plugin : IDalamudPlugin
         this.FateTracker.LocationLearned += this.OnLocationLearned;
         this.CeTracker.LocationLearned += this.OnLocationLearned;
         this.CeTracker.CeCompleted += this.OnCeCompleted;
+        Service.ChatGui.LogMessage += this.OnLogMessage;
         this.FateTracker.FateCompleted += this.OnFateCompleted;
         this.ScanAlerter.EnemyAppeared += this.OnScanEnemyAppeared;
 
@@ -116,6 +119,39 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (this.RecordService.InOccultCrescent())
             this.ChallengeScraper.OnFateCompleted();
+    }
+
+    // "You defeat X." (LogMessage 557) on the Occult Crescent nudges Occult Interloping when X's level is at
+    // least your Knowledge Level. The corpse is still in the object table, so its level is read from there.
+    private const uint LogYouDefeat = 557;
+
+    private void OnLogMessage(ILogMessage message)
+    {
+        if (message.LogMessageId != LogYouDefeat || !this.RecordService.InOccultCrescent())
+            return;
+
+        var name = message.TargetEntity?.Name.ExtractText();
+        var me = Service.ObjectTable.LocalPlayer;
+        var knowledge = this.Progress.Current.KnowledgeLevel;
+        if (string.IsNullOrEmpty(name) || me is null || knowledge <= 0)
+            return;
+
+        IBattleNpc? mob = null;
+        var best = float.MaxValue;
+        foreach (var o in Service.ObjectTable)
+        {
+            if (o is not IBattleNpc npc || !npc.IsDead || !name.Contains(npc.Name.TextValue, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var d = System.Numerics.Vector3.Distance(npc.Position, me.Position);
+            if (d < best)
+            {
+                best = d;
+                mob = npc;
+            }
+        }
+
+        if (mob is not null && mob.Level >= knowledge)
+            this.ChallengeScraper.OnInterlopingKill();
     }
 
     // Persists a learned encounter position so the nearest-crystal hint outlives the session.
@@ -253,6 +289,7 @@ public sealed class Plugin : IDalamudPlugin
         this.FateTracker.FateActivated -= this.OnFateActivated;
         this.CeTracker.CeActivated -= this.OnCeActivated;
         this.CeTracker.CeCompleted -= this.OnCeCompleted;
+        Service.ChatGui.LogMessage -= this.OnLogMessage;
         this.FateTracker.FateCompleted -= this.OnFateCompleted;
         this.ScanAlerter.EnemyAppeared -= this.OnScanEnemyAppeared;
         this.FateTracker.LocationLearned -= this.OnLocationLearned;
